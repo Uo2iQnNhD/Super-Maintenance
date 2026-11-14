@@ -645,9 +645,9 @@ Main:CreateToggle({Name = "Kill All Gun", Icon = "crosshair", Flag = "MVSD_KillG
     Tooltip = "Shoot all enemies every 0.1s until dead (no lag)", Callback = function(v) S.KillGunEnabled = v end})
 Main:CreateToggle({Name = "Kill All Knife", Icon = "sword", Flag = "MVSD_KillKnife", Default = false,
     Tooltip = "Stab/throw all enemies every 0.1s until dead (no lag)", Callback = function(v) S.KillKnifeEnabled = v end})
-Main:CreateSlider({Name = "Kill Gun Delay", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.1, Step = 0.01, Flag = "MVSD_KillGunDelay",
+Main:CreateSlider({Name = "Kill Gun Delay", Icon = "timer", Min = 0.05, Max = 0.5, Default = 0.1, Step = 0.01, Flag = "MVSD_KillGunDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillGunDelay = v end})
-Main:CreateSlider({Name = "Kill Knife Delay", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.1, Step = 0.01, Flag = "MVSD_KillKnifeDelay",
+Main:CreateSlider({Name = "Kill Knife Delay", Icon = "timer", Min = 0.05, Max = 0.5, Default = 0.1, Step = 0.01, Flag = "MVSD_KillKnifeDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillKnifeDelay = v end})
 Main:CreateButton({Name = "Kill All Gun (Once)", Icon = "target",
     Callback = function() killGunPass(8) Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})

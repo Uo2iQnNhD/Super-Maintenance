@@ -676,9 +676,9 @@ Main:CreateSlider({Name = "Kill Gun Delay", Icon = "timer", Min = 0.01, Max = 0.
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillGunDelay = v end})
 Main:CreateSlider({Name = "Kill Knife Delay", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.01, Step = 0.01, Flag = "MVSD_KillKnifeDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillKnifeDelay = v end})
-Main:CreateSlider({Name = "Kill Gun Burst", Icon = "layers", Min = 1, Max = 20, Default = 5, Step = 1, Flag = "MVSD_KillGunBurst",
+Main:CreateSlider({Name = "Kill Gun Burst", Icon = "layers", Min = 1, Max = 25, Default = 5, Step = 1, Flag = "MVSD_KillGunBurst",
     Format = function(v) return tostring(v) .. "x" end, Callback = function(v) S.KillGunBurst = v end})
-Main:CreateSlider({Name = "Kill Knife Burst", Icon = "layers", Min = 1, Max = 20, Default = 5, Step = 1, Flag = "MVSD_KillKnifeBurst",
+Main:CreateSlider({Name = "Kill Knife Burst", Icon = "layers", Min = 1, Max = 25, Default = 5, Step = 1, Flag = "MVSD_KillKnifeBurst",
     Format = function(v) return tostring(v) .. "x" end, Callback = function(v) S.KillKnifeBurst = v end})
 Main:CreateButton({Name = "Kill All Gun (Once)", Icon = "target",
     Callback = function() killGunPass(15) Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})

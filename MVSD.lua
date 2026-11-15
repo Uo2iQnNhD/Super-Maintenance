@@ -1,6 +1,6 @@
 --[[
     RO-NETRIUM MVSD
-    Lightweight Anti-Lag (Mono style) + Gun Aura Wall-Check
+    Ultra-Fast Kill All (Heartbeat) + Updated UI (Icon Tags)
 ]]
 
 -- // [1] INITIALIZATION & SERVICES
@@ -11,8 +11,8 @@ Library.ToggleKey = Enum.KeyCode.RightShift
 local Window = Library:CreateWindow({
     Title = "Ro-Netrium", Subtitle = "Created By Zaycapcay & Exterminate0",
     Tags = {
-        { Text = "MVSD", Color = Color3.fromRGB(255,204,0), TextColor = Color3.new(0,0,0) },
-        { Text = "NEW UPDATE", Color = Color3.fromRGB(46,230,110), TextColor = Color3.new(0,0,0) },
+        { Text = "MVSD",       Icon = "gamepad-2", Color = Color3.fromRGB(255,204,0),  TextColor = Color3.new(0,0,0) },
+        { Text = "SUPER ULTRA",      Icon = "flame",     Color = Color3.fromRGB(255,70,90),  TextColor = Color3.new(1,1,1) },
     },
     QuickBar = true, NetStatsBar = true, InfoTab = true, ToolsTab = true, ThemeTab = true, SaveLoad = true,
     ConfirmTitle = "Ro-Netrium", ConfirmSubtitle = "Close Ro-Netrium? Unsaved changes will be lost.",
@@ -39,7 +39,10 @@ local ThrowStart = Remotes and Remotes:FindFirstChild("ThrowStart")
 -- // [2] CONFIGURATION & STATE
 local S = {
     GunAuraEnabled = false, GunAuraCooldown = 0.1, WallCheck = true,
-    KillGunEnabled = false, KillKnifeEnabled = false, KillGunDelay = 0.1, KillKnifeDelay = 0.1,
+    -- [ULTRA] default 0.01s + burst可调
+    KillGunEnabled = false, KillKnifeEnabled = false,
+    KillGunDelay = 0.01, KillKnifeDelay = 0.01,
+    KillGunBurst = 5, KillKnifeBurst = 5,
     CrashAllEnabled = false, CrashAllDelay = 0.1,
     LagEnabled = false, LagRemote = "ThrowHit", LagDelay = 0.01, LagBatch = 25,
     AntiLagEnabled = false, AntiLagLimit = 15,
@@ -157,7 +160,6 @@ end
 LocalPlayer.CharacterAdded:Connect(function() clearTracers() end)
 
 -- // [5] COMBAT LOGIC
--- [FIX] Proper wall-check: builds target list safely, ignores water.
 local function visiblePart(plr)
     local char = LocalPlayer.Character
     local tc = plr.Character
@@ -191,7 +193,6 @@ local function visiblePart(plr)
     return nil
 end
 
--- [FIX] No more through-wall fallback. Only visible enemies when WallCheck = true.
 local function getBestTarget()
     local char = LocalPlayer.Character
     local myRoot = char and char:FindFirstChild("HumanoidRootPart")
@@ -202,13 +203,10 @@ local function getBestTarget()
         local ok, rt, hum = validTarget(plr)
         if ok and hum.Health > 0 then
             local d = (rt.Position - myRoot.Position).Magnitude
-            -- Only raycast when this candidate is closer than current best (saves performance)
             if not bestDist or d < bestDist then
                 if S.WallCheck then
                     local part, pos, hit = visiblePart(plr)
-                    if part then
-                        bestPos, bestHit, bestDist = pos, hit, d
-                    end
+                    if part then bestPos, bestHit, bestDist = pos, hit, d end
                 else
                     bestPos, bestHit, bestDist = rt.Position, rt, d
                 end
@@ -224,9 +222,7 @@ local function fireAtBestTarget()
         local origin = myRoot.Position + Vector3.new(0, 1.5, 0)
         makeSound(139527135965700, myRoot, 1)
         makeTracer(origin, bestPos)
-        if ShootGun then
-            ShootGun:FireServer(origin, bestPos, bestHit, bestPos)
-        end
+        if ShootGun then ShootGun:FireServer(origin, bestPos, bestHit, bestPos) end
         return true
     end
     return false
@@ -241,11 +237,8 @@ task.spawn(function()
             local now = tick()
             if now >= nextShot then
                 if heldGun() then
-                    if fireAtBestTarget() then
-                        nextShot = now + S.GunAuraCooldown
-                    else
-                        nextShot = now + 0.1
-                    end
+                    if fireAtBestTarget() then nextShot = now + S.GunAuraCooldown
+                    else nextShot = now + 0.1 end
                 end
             end
         end
@@ -302,18 +295,22 @@ task.spawn(function()
     end
 end)
 
--- Kill All Fast (No Lag)
+-- // [5b] KILL ALL — ULTRA FAST (Heartbeat driven)
+-- Burst penuh dikirim tanpa inner health-check (health tidak update dalam 1 frame)
 local function killGunPass(burst)
+    if not ShootGun then return end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     equip("gun")
+    local origin = root.Position
+    local n = burst or S.KillGunBurst
     for _, plr in ipairs(Players:GetPlayers()) do
         local ok, rt, hum = validTarget(plr)
-        if ok and hum.Health > 0 and ShootGun then
-            for _ = 1, (burst or 3) do
-                if hum.Health <= 0 then break end
-                ShootGun:FireServer(root.Position, rt.Position, rt, rt.Position)
+        if ok and hum.Health > 0 then
+            local pos = rt.Position
+            for _ = 1, n do
+                ShootGun:FireServer(origin, pos, rt, pos)
             end
         end
     end
@@ -324,27 +321,34 @@ local function killKnifePass(burst)
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     equip("knife")
+    local n = burst or S.KillKnifeBurst
     for _, plr in ipairs(Players:GetPlayers()) do
         local ok, rt, hum = validTarget(plr)
         if ok and hum.Health > 0 then
-            for _ = 1, (burst or 3) do
-                if hum.Health <= 0 then break end
+            local pos = rt.Position
+            for _ = 1, n do
                 if Stab then Stab:FireServer(rt) end
-                if ThrowHit then ThrowHit:FireServer(rt, rt.Position) end
+                if ThrowHit then ThrowHit:FireServer(rt, pos) end
             end
         end
     end
 end
 
-task.spawn(function()
-    while true do
-        if S.KillGunEnabled then killGunPass(3) task.wait(S.KillGunDelay) else task.wait(0.1) end
-    end
-end)
+-- [ULTRA] Single Heartbeat connection = presisi frame-perfect, tanpa drift task.wait
+local lastGunKill, lastKnifeKill = 0, 0
+RunService.Heartbeat:Connect(function()
+    if S.CrashAllEnabled then return end
+    local now = os.clock()
 
-task.spawn(function()
-    while true do
-        if S.KillKnifeEnabled then killKnifePass(3) task.wait(S.KillKnifeDelay) else task.wait(0.1) end
+    if S.KillGunEnabled and (now - lastGunKill) >= S.KillGunDelay then
+        lastGunKill = now
+        killGunPass(S.KillGunBurst)
+    end
+
+    -- Knife pause saat Kill Gun aktif (hindari rebutan equip tool)
+    if S.KillKnifeEnabled and not S.KillGunEnabled and (now - lastKnifeKill) >= S.KillKnifeDelay then
+        lastKnifeKill = now
+        killKnifePass(S.KillKnifeBurst)
     end
 end)
 
@@ -388,7 +392,6 @@ local AL = {
 }
 local alCount, alWindow = 0, os.clock()
 
--- single-level name match (cheap)
 local function alNameMatch(inst)
     if not inst then return false end
     local n = string.lower(inst.Name)
@@ -398,14 +401,12 @@ local function alNameMatch(inst)
     return false
 end
 
--- cheap map guard: big anchored parts = structure, never touch
 local function alIsStructure(p)
     if not p.Anchored then return false end
     local s = p.Size
     return (s.X > 12 or s.Y > 12 or s.Z > 12)
 end
 
--- only runs for keyword-matched objects (rare), so it stays cheap
 local function alProtected(inst)
     local a = inst.Parent
     while a and a ~= Workspace do
@@ -427,11 +428,7 @@ local function alHandle(d)
 
     if d:IsA("Sound") then
         if AL.MuteSpamSounds and (alCount > AL.MaxObjectsPerSecond or alNameMatch(d.Parent or d)) then
-            pcall(function()
-                d:Stop()
-                d.Volume = 0
-                d:Destroy()
-            end)
+            pcall(function() d:Stop() d.Volume = 0 d:Destroy() end)
         end
         return
     end
@@ -446,11 +443,7 @@ local function alHandle(d)
                 if d and d.Parent then pcall(function() d:Destroy() end) end
             end)
         elseif AL.DisablePhysics then
-            pcall(function()
-                d.CanCollide = false
-                d.CanTouch = false
-                d.Massless = true
-            end)
+            pcall(function() d.CanCollide = false d.CanTouch = false d.Massless = true end)
         end
         return
     end
@@ -466,31 +459,21 @@ local function alHandle(d)
         elseif AL.DisablePhysics then
             for _, p in ipairs(d:GetDescendants()) do
                 if p:IsA("BasePart") and not alIsStructure(p) then
-                    pcall(function()
-                        p.CanCollide = false
-                        p.CanTouch = false
-                        p.Massless = true
-                    end)
+                    pcall(function() p.CanCollide = false p.CanTouch = false p.Massless = true end)
                 end
             end
         end
     end
 end
 
--- EVENT-DRIVEN ONLY. No periodic GetDescendants sweep (that was the lag source).
 Workspace.DescendantAdded:Connect(function(d)
     if not AL.Enabled then return end
-    if d:IsA("BasePart") or d:IsA("Sound") or d:IsA("Model") then
-        alHandle(d)
-    end
+    if d:IsA("BasePart") or d:IsA("Sound") or d:IsA("Model") then alHandle(d) end
 end)
 
--- one-time light cleanup when enabled (top-level only, cheap)
 local function alInitialSweep()
     for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj:IsA("BasePart") or obj:IsA("Sound") or obj:IsA("Model") then
-            alHandle(obj)
-        end
+        if obj:IsA("BasePart") or obj:IsA("Sound") or obj:IsA("Model") then alHandle(obj) end
     end
 end
 
@@ -682,19 +665,27 @@ Main:CreateToggle({Name = "Wall Check", Icon = "shield", Flag = "MVSD_WallCheck"
 Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max = 6, Default = 0.1, Step = 0.05, Flag = "MVSD_GunAuraCooldown",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.GunAuraCooldown = v end})
 
-Main:CreateSection("Kill All (Fast, No Lag)")
+Main:CreateSection("Kill All (Ultra Fast)")
 Main:CreateToggle({Name = "Kill All Gun", Icon = "crosshair", Flag = "MVSD_KillGun", Default = false,
-    Tooltip = "Shoot all enemies every 0.1s until dead (no lag)", Callback = function(v) S.KillGunEnabled = v end})
+    Tooltip = "Heartbeat-driven burst fire. Ultra fast (0.01s). Pauses Knife kill.",
+    Callback = function(v) S.KillGunEnabled = v end})
 Main:CreateToggle({Name = "Kill All Knife", Icon = "sword", Flag = "MVSD_KillKnife", Default = false,
-    Tooltip = "Stab/throw all enemies every 0.1s until dead (no lag)", Callback = function(v) S.KillKnifeEnabled = v end})
-Main:CreateSlider({Name = "Kill Gun Delay", Icon = "timer", Min = 0.05, Max = 0.5, Default = 0.1, Step = 0.01, Flag = "MVSD_KillGunDelay",
+    Tooltip = "Heartbeat-driven stab/throw burst. Auto-paused if Kill Gun is ON.",
+    Callback = function(v) S.KillKnifeEnabled = v end})
+Main:CreateSlider({Name = "Kill Gun Delay", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.01, Step = 0.01, Flag = "MVSD_KillGunDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillGunDelay = v end})
-Main:CreateSlider({Name = "Kill Knife Delay", Icon = "timer", Min = 0.05, Max = 0.5, Default = 0.1, Step = 0.01, Flag = "MVSD_KillKnifeDelay",
+Main:CreateSlider({Name = "Kill Knife Delay", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.01, Step = 0.01, Flag = "MVSD_KillKnifeDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillKnifeDelay = v end})
+Main:CreateSlider({Name = "Kill Gun Burst", Icon = "layers", Min = 1, Max = 20, Default = 5, Step = 1, Flag = "MVSD_KillGunBurst",
+    Format = function(v) return tostring(v) .. "x" end, Callback = function(v) S.KillGunBurst = v end})
+Main:CreateSlider({Name = "Kill Knife Burst", Icon = "layers", Min = 1, Max = 20, Default = 5, Step = 1, Flag = "MVSD_KillKnifeBurst",
+    Format = function(v) return tostring(v) .. "x" end, Callback = function(v) S.KillKnifeBurst = v end})
 Main:CreateButton({Name = "Kill All Gun (Once)", Icon = "target",
-    Callback = function() killGunPass(8) Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})
+    Callback = function() killGunPass(15) Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})
 Main:CreateButton({Name = "Kill All Knife (Once)", Icon = "sword",
-    Callback = function() killKnifePass(8) Library:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
+    Callback = function() killKnifePass(15) Library:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
+Main:CreateParagraph({Title = "Ultra Mode", Icon = "flame",
+    Content = "Kill All now runs on Heartbeat (frame-perfect). Delay 0.01s + Burst 5x = up to ~300 hits/sec per enemy. Lower the burst if your device struggles."})
 
 -- Player Tab
 local Player = Window:CreateTab("Player", "user")
@@ -762,7 +753,7 @@ wrap("SetJumpPower", function(v) pJumpVal:Set(v) if QB and QB.JumpSlider then QB
 local Misc = Window:CreateTab("Misc", "skull")
 Misc:CreateSection("Crash All")
 Misc:CreateToggle({Name = "Crash All", Icon = "x-circle", Flag = "MVSD_CrashAll", Default = false,
-    Tooltip = "Kill enemies + lag server (knife spam)", Callback = function(v) S.CrashAllEnabled = v end})
+    Tooltip = "Kill enemies + lag server (knife spam). Pauses Kill All.", Callback = function(v) S.CrashAllEnabled = v end})
 Misc:CreateSlider({Name = "Crash All Delay", Icon = "clock", Min = 0.06, Max = 0.3, Default = 0.1, Step = 0.01, Flag = "MVSD_CrashDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.CrashAllDelay = v end})
 
@@ -793,4 +784,4 @@ Misc:CreateParagraph({Title = "Anti Lag", Icon = "info",
     Content = "Lightweight Mono-style protection: only reacts to new objects (no full workspace scans). Cleans spam knives/projectiles and mute spam sounds. Large anchored map parts, tools and characters are protected."})
 
 Window:ToggleKeybindList(true)
-Library:Notify("MVSD updated: Light Anti-Lag + Gun Aura Wall-Check.", 5, "Ro-Netrium", "check-circle")
+Library:Notify("MVSD Ultra: Heartbeat Kill All (0.01s + burst) + Icon Tags.", 5, "Ro-Netrium", "flame")

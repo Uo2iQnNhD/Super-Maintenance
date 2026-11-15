@@ -1,6 +1,6 @@
 --[[
     RO-NETRIUM MVSD
-    Final Version (Silent Aim Removed) & Anti-Overlap ESP
+    Lightweight Anti-Lag (Mono style) + Gun Aura Wall-Check
 ]]
 
 -- // [1] INITIALIZATION & SERVICES
@@ -38,11 +38,11 @@ local ThrowStart = Remotes and Remotes:FindFirstChild("ThrowStart")
 
 -- // [2] CONFIGURATION & STATE
 local S = {
-    GunAuraEnabled = false, GunAuraCooldown = 0.1,
+    GunAuraEnabled = false, GunAuraCooldown = 0.1, WallCheck = true,
     KillGunEnabled = false, KillKnifeEnabled = false, KillGunDelay = 0.1, KillKnifeDelay = 0.1,
     CrashAllEnabled = false, CrashAllDelay = 0.1,
     LagEnabled = false, LagRemote = "ThrowHit", LagDelay = 0.01, LagBatch = 25,
-    AntiLagEnabled = false,
+    AntiLagEnabled = false, AntiLagLimit = 15,
     ESPEnabled = false, ESPNames = true, ESPDistance = true, ESPRange = 300,
     MovementMode = "Normal",
 }
@@ -146,6 +146,7 @@ local function makeTracer(a, b)
     p.CFrame = CFrame.new(a:Lerp(b, 0.5), b)
     p.Parent = Workspace
     table.insert(tracers, p)
+    Debris:AddItem(p, 1.5)
 end
 
 local function clearTracers()
@@ -156,6 +157,7 @@ end
 LocalPlayer.CharacterAdded:Connect(function() clearTracers() end)
 
 -- // [5] COMBAT LOGIC
+-- [FIX] Proper wall-check: builds target list safely, ignores water.
 local function visiblePart(plr)
     local char = LocalPlayer.Character
     local tc = plr.Character
@@ -163,61 +165,62 @@ local function visiblePart(plr)
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     local origin = root.Position + Vector3.new(0, 1.5, 0)
+
+    local targets = {}
+    local torso = tc:FindFirstChild("UpperTorso") or tc:FindFirstChild("Torso")
+    if torso then targets[#targets + 1] = torso end
+    local hrp = tc:FindFirstChild("HumanoidRootPart")
+    if hrp then targets[#targets + 1] = hrp end
+    local head = tc:FindFirstChild("Head")
+    if head then targets[#targets + 1] = head end
+
     local rp = RaycastParams.new()
     rp.FilterType = Enum.RaycastFilterType.Exclude
-    rp.FilterDescendantsInstances = {char, Camera}
-    for _, part in ipairs({
-        tc:FindFirstChild("UpperTorso") or tc:FindFirstChild("Torso"),
-        tc:FindFirstChild("HumanoidRootPart"),
-        tc:FindFirstChild("Head")
-    }) do
-        if part then
-            local hit = Workspace:Raycast(origin, part.Position - origin, rp)
+    rp.FilterDescendantsInstances = { char, Camera }
+    rp.IgnoreWater = true
+
+    for _, part in ipairs(targets) do
+        local dir = part.Position - origin
+        if dir.Magnitude > 0.05 then
+            local hit = Workspace:Raycast(origin, dir, rp)
             if hit and hit.Instance and hit.Instance:IsDescendantOf(tc) then
                 return part, hit.Position, hit.Instance
             end
         end
     end
+    return nil
 end
 
+-- [FIX] No more through-wall fallback. Only visible enemies when WallCheck = true.
 local function getBestTarget()
     local char = LocalPlayer.Character
     local myRoot = char and char:FindFirstChild("HumanoidRootPart")
     if not myRoot then return nil, nil, nil end
-    
+
     local bestPos, bestHit, bestDist
-    local fallbackPos, fallbackHit, fallbackDist
-    
     for _, plr in ipairs(Players:GetPlayers()) do
         local ok, rt, hum = validTarget(plr)
         if ok and hum.Health > 0 then
             local d = (rt.Position - myRoot.Position).Magnitude
-            
-            if not fallbackDist or d < fallbackDist then
-                fallbackPos, fallbackHit, fallbackDist = rt.Position, rt, d
-            end
-
-            local part, pos, hit = visiblePart(plr)
-            if part then
-                if not bestDist or d < bestDist then
-                    bestPos, bestHit, bestDist = pos, hit, d
+            -- Only raycast when this candidate is closer than current best (saves performance)
+            if not bestDist or d < bestDist then
+                if S.WallCheck then
+                    local part, pos, hit = visiblePart(plr)
+                    if part then
+                        bestPos, bestHit, bestDist = pos, hit, d
+                    end
+                else
+                    bestPos, bestHit, bestDist = rt.Position, rt, d
                 end
             end
         end
     end
-    
-    if bestPos then
-        return bestPos, bestHit, myRoot
-    elseif fallbackPos then
-        return fallbackPos, fallbackHit, myRoot
-    end
-    
-    return nil, nil, nil
+    return bestPos, bestHit, myRoot
 end
 
 local function fireAtBestTarget()
     local bestPos, bestHit, myRoot = getBestTarget()
-    if bestPos and myRoot then
+    if bestPos and bestHit and myRoot then
         local origin = myRoot.Position + Vector3.new(0, 1.5, 0)
         makeSound(139527135965700, myRoot, 1)
         makeTracer(origin, bestPos)
@@ -345,7 +348,7 @@ task.spawn(function()
     end
 end)
 
--- // [6] SERVER LAG & ANTI-LAG
+-- // [6] SERVER LAG
 local function lagArgs(name)
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -375,85 +378,121 @@ task.spawn(function()
     end
 end)
 
+-- // [6b] ANTI-LAG (Mono Hub style — lightweight, event-driven only)
 local AL = {
     Enabled = false,
-    Keywords = {"knife", "blade", "throw", "projectile", "handle", "tool", "kunai", "dagger", "sword", "axe", "bomb", "grenade", "bullet", "tracer", "slash", "stab", "missile", "rocket"},
-    Effects = {ParticleEmitter = true, Trail = true, Beam = true, Fire = true, Smoke = true, Sparkles = true, Explosion = true, PointLight = true, SpotLight = true, SurfaceLight = true},
+    MaxObjectsPerSecond = 15,
+    DisablePhysics = true,
+    MuteSpamSounds = true,
+    Keywords = { "knife", "blade", "throw", "handle", "projectile", "tool" },
 }
-local alPartCount, alPartWin = 0, os.clock()
-local alSndCount, alSndWin = 0, os.clock()
-local alSpamUntil = 0
+local alCount, alWindow = 0, os.clock()
 
+-- single-level name match (cheap)
 local function alNameMatch(inst)
-    local cur = inst
-    for _ = 1, 3 do
-        if not cur then break end
-        local n = string.lower(cur.Name)
-        for _, k in ipairs(AL.Keywords) do if n:find(k, 1, true) then return true end end
-        cur = cur.Parent
+    if not inst then return false end
+    local n = string.lower(inst.Name)
+    for _, k in ipairs(AL.Keywords) do
+        if n:find(k, 1, true) then return true end
     end
     return false
 end
 
-local function alIsChar(inst)
-    for _, plr in ipairs(Players:GetPlayers()) do
-        local c = plr.Character
-        if c and inst:IsDescendantOf(c) then return true end
+-- cheap map guard: big anchored parts = structure, never touch
+local function alIsStructure(p)
+    if not p.Anchored then return false end
+    local s = p.Size
+    return (s.X > 12 or s.Y > 12 or s.Z > 12)
+end
+
+-- only runs for keyword-matched objects (rare), so it stays cheap
+local function alProtected(inst)
+    local a = inst.Parent
+    while a and a ~= Workspace do
+        if a:IsA("Tool") then return true end
+        if a:IsA("Model") and Players:GetPlayerFromCharacter(a) then return true end
+        a = a.Parent
     end
     return false
 end
 
-local function alDestroy(inst) if inst and inst.Parent then pcall(function() inst:Destroy() end) end end
+local function alHandle(d)
+    if not AL.Enabled then return end
 
-local function alNeutralize(p)
-    pcall(function() p.CanCollide = false p.CanTouch = false p.CanQuery = false p.Massless = true p.CastShadow = false end)
-    for _, ch in ipairs(p:GetDescendants()) do
-        if AL.Effects[ch.ClassName] then pcall(function() ch.Enabled = false end) end
-        if ch:IsA("Sound") then pcall(function() ch:Stop() ch.Volume = 0 end) end
+    local now = os.clock()
+    if now - alWindow >= 1 then
+        alCount = 0
+        alWindow = now
     end
-end
 
-local function alCleanObj(obj, spam)
-    if alIsChar(obj) then return end
-    if obj:IsA("Sound") then
-        if spam or alNameMatch(obj.Parent or obj) then pcall(function() obj:Stop() obj.Volume = 0 end) alDestroy(obj) end
+    if d:IsA("Sound") then
+        if AL.MuteSpamSounds and (alCount > AL.MaxObjectsPerSecond or alNameMatch(d.Parent or d)) then
+            pcall(function()
+                d:Stop()
+                d.Volume = 0
+                d:Destroy()
+            end)
+        end
         return
     end
-    if AL.Effects[obj.ClassName] then
-        if spam or alNameMatch(obj) then pcall(function() obj.Enabled = false end) alDestroy(obj) end
+
+    if d:IsA("BasePart") then
+        if alIsStructure(d) then return end
+        if not alNameMatch(d) then return end
+        if alProtected(d) then return end
+        alCount += 1
+        if alCount > AL.MaxObjectsPerSecond then
+            task.defer(function()
+                if d and d.Parent then pcall(function() d:Destroy() end) end
+            end)
+        elseif AL.DisablePhysics then
+            pcall(function()
+                d.CanCollide = false
+                d.CanTouch = false
+                d.Massless = true
+            end)
+        end
         return
     end
-    if obj:IsA("BasePart") or obj:IsA("Model") then
-        local match = alNameMatch(obj)
-        if match then alDestroy(obj)
-        elseif spam then
-            if obj:IsA("BasePart") and obj.Anchored then alNeutralize(obj) else alDestroy(obj) end
+
+    if d:IsA("Model") then
+        if not alNameMatch(d) then return end
+        if alProtected(d) then return end
+        alCount += 1
+        if alCount > AL.MaxObjectsPerSecond then
+            task.defer(function()
+                if d and d.Parent then pcall(function() d:Destroy() end) end
+            end)
+        elseif AL.DisablePhysics then
+            for _, p in ipairs(d:GetDescendants()) do
+                if p:IsA("BasePart") and not alIsStructure(p) then
+                    pcall(function()
+                        p.CanCollide = false
+                        p.CanTouch = false
+                        p.Massless = true
+                    end)
+                end
+            end
         end
     end
 end
 
+-- EVENT-DRIVEN ONLY. No periodic GetDescendants sweep (that was the lag source).
 Workspace.DescendantAdded:Connect(function(d)
     if not AL.Enabled then return end
-    if alIsChar(d) then return end
-    local now = os.clock()
-    if now - alPartWin >= 0.5 then alPartCount = 0 alPartWin = now end
-    if now - alSndWin >= 0.5 then alSndCount = 0 alSndWin = now end
-    local spam = now < alSpamUntil
-    if d:IsA("Sound") then alSndCount += 1 if alSndCount > 20 then alSpamUntil = now + 2 spam = true end
-    elseif d:IsA("BasePart") or d:IsA("Model") then alPartCount += 1 if alPartCount > 40 then alSpamUntil = now + 2 spam = true end end
-    alCleanObj(d, spam)
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        if AL.Enabled then
-            local spam = os.clock() < alSpamUntil
-            local list = spam and Workspace:GetDescendants() or Workspace:GetChildren()
-            for _, obj in ipairs(list) do alCleanObj(obj, spam) end
-        end
+    if d:IsA("BasePart") or d:IsA("Sound") or d:IsA("Model") then
+        alHandle(d)
     end
 end)
+
+-- one-time light cleanup when enabled (top-level only, cheap)
+local function alInitialSweep()
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("BasePart") or obj:IsA("Sound") or obj:IsA("Model") then
+            alHandle(obj)
+        end
+    end
+end
 
 -- // [7] ESP SYSTEM (With Distance & Anti-Overlap)
 local ESP = { Enabled = false, Range = 300, Names = true, Distance = true, Objects = {} }
@@ -512,7 +551,7 @@ local function espCreate(p, color, dist)
     if not char then return end
     local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
     if not head then return end
-    
+
     local libHL = char:FindFirstChild("PlayerESP_HL")
     if libHL then pcall(function() libHL:Destroy() end) end
     local libBB = head:FindFirstChild("PlayerESP_GUI")
@@ -527,7 +566,7 @@ local function espCreate(p, color, dist)
     hl.OutlineTransparency = 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = char
-    
+
     local bb, txt, dtxt
     if ESP.Names or ESP.Distance then
         bb = Instance.new("BillboardGui")
@@ -537,7 +576,7 @@ local function espCreate(p, color, dist)
         bb.StudsOffset = Vector3.new(0, 2.5, 0)
         bb.AlwaysOnTop = true
         bb.Parent = head
-        
+
         local y = 0
         if ESP.Names then
             txt = Instance.new("TextLabel")
@@ -637,7 +676,10 @@ local Main = Window:CreateTab("Main", "crosshair")
 Main:CreateSection("Auto Shoot")
 Main:CreateToggle({Name = "Gun Aura", Icon = "target", Flag = "MVSD_GunAura", Default = false,
     Tooltip = "Auto shoot while holding gun; switch to knife = pause", Callback = function(v) S.GunAuraEnabled = v end})
-Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max = 3, Default = 0.1, Step = 0.05, Flag = "MVSD_GunAuraCooldown",
+Main:CreateToggle({Name = "Wall Check", Icon = "shield", Flag = "MVSD_WallCheck", Default = true,
+    Tooltip = "Only shoot enemies you can actually see (no shooting through walls)",
+    Callback = function(v) S.WallCheck = v end})
+Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max = 6, Default = 0.1, Step = 0.05, Flag = "MVSD_GunAuraCooldown",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.GunAuraCooldown = v end})
 
 Main:CreateSection("Kill All (Fast, No Lag)")
@@ -675,11 +717,11 @@ local pJumpVal = Player:CreateSlider({Name = "Jump Power Value", Icon = "gauge",
 Player:CreateSection("ESP")
 Player:CreateToggle({Name = "ESP Player", Icon = "eye", Flag = "MVSD_ESP", Default = false,
     Tooltip = "Match-only ESP. Auto-disables & destroys library ESP to prevent overlap.",
-    Callback = function(v) 
-        S.ESPEnabled = v 
-        ESP.Enabled = v 
-        if not v then 
-            espClearAll() 
+    Callback = function(v)
+        S.ESPEnabled = v
+        ESP.Enabled = v
+        if not v then
+            espClearAll()
         else
             clearLibraryESP()
             if Library and Library._elements and Library._elements["ESPPlayerToggle"] then
@@ -688,7 +730,7 @@ Player:CreateToggle({Name = "ESP Player", Icon = "eye", Flag = "MVSD_ESP", Defau
                     pcall(function() el.Object:Set(false) end)
                 end
             end
-        end 
+        end
     end})
 Player:CreateToggle({Name = "ESP Names", Icon = "type", Flag = "MVSD_ESPNames", Default = true,
     Tooltip = "Show player name tags", Callback = function(v) S.ESPNames = v ESP.Names = v espClearAll() end})
@@ -730,13 +772,25 @@ Misc:CreateDropdown({Name = "Select Remote", Icon = "send", Options = {"ThrowHit
 Misc:CreateSlider({Name = "Cooldown Send", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.01, Step = 0.01, Flag = "MVSD_LagDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.LagDelay = v end})
 Misc:CreateSlider({Name = "How Much Send", Icon = "layers", Min = 1, Max = 9999, Default = 25, Step = 1, Flag = "MVSD_LagBatch", Callback = function(v) S.LagBatch = v end})
-Misc:CreateToggle({Name = "Anti Lag (Protection)", Icon = "shield", Flag = "MVSD_AntiLag", Default = false,
-    Tooltip = "Destroy spam projectiles/effects/sounds to protect FPS from crash",
-    Callback = function(v) S.AntiLagEnabled = v AL.Enabled = v
-        if v then Library:Notify("Anti Lag ON: protecting against spam/crash.", 3, "Anti Lag", "shield")
-        else Library:Notify("Anti Lag OFF.", 3, "Anti Lag", "shield") end
+
+Misc:CreateToggle({Name = "Anti Lag (Light)", Icon = "shield", Flag = "MVSD_AntiLag", Default = false,
+    Tooltip = "Mono-style lightweight anti-lag. Event-driven only, no heavy scanning.",
+    Callback = function(v)
+        S.AntiLagEnabled = v
+        AL.Enabled = v
+        if v then
+            alCount, alWindow = 0, os.clock()
+            alInitialSweep()
+            Library:Notify("Anti Lag ON (light mode).", 3, "Anti Lag", "shield")
+        else
+            Library:Notify("Anti Lag OFF.", 3, "Anti Lag", "shield")
+        end
     end})
+Misc:CreateSlider({Name = "Anti Lag Limit", Icon = "gauge", Min = 5, Max = 60, Default = 15, Step = 1, Flag = "MVSD_AntiLagLimit",
+    Format = function(v) return tostring(v) .. "/s" end,
+    Callback = function(v) S.AntiLagLimit = v AL.MaxObjectsPerSecond = v end})
 Misc:CreateParagraph({Title = "Anti Lag", Icon = "info",
-    Content = "Client-side protection. Destroys spam knives/projectiles, effects and sounds, and enters protection mode when spawn rate is too high. Players & map are safe."})
+    Content = "Lightweight Mono-style protection: only reacts to new objects (no full workspace scans). Cleans spam knives/projectiles and mute spam sounds. Large anchored map parts, tools and characters are protected."})
 
 Window:ToggleKeybindList(true)
+Library:Notify("MVSD updated: Light Anti-Lag + Gun Aura Wall-Check.", 5, "Ro-Netrium", "check-circle")

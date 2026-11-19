@@ -44,7 +44,7 @@ local S = {
 
     SilentAimEnabled = false,
     SilentAimPart = "Torso",
-    SilentAimMaxDist = 400,
+    SilentAimMaxDist = 3000,
     SilentAimWallCheck = true,
 
     AutoUnanchor = false,
@@ -61,7 +61,7 @@ local S = {
     BatchMode = false,
 
     AntiLagEnabled = false, AntiLagLimit = 15,
-    AntiLagFX = true, AntiLagSounds = true,
+    AntiLagFX = false, AntiLagSounds = false,
 
     ESPEnabled = false, ESPNames = true, ESPDistance = true, ESPRange = 300,
     MovementMode = "Normal",

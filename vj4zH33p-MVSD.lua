@@ -1,6 +1,6 @@
 --[[
-    RO-NETRIUM MVSD — SUPER ULTRA (STABLE CRASH)
-    Old Crash All method (100 projectiles) + all latest features
+    RO-NETRIUM MVSD — SUPER ULTRA
+    Silent Aim: On-Screen Method | Old ESP | Action Warning | Startup Reset
 ]]
 
 -- // [1] INITIALIZATION & SERVICES
@@ -25,6 +25,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -40,17 +42,21 @@ local ThrowStart = Remotes and Remotes:FindFirstChild("ThrowStart")
 local S = {
     AutoShootEnabled = false, AutoShootCooldown = 0.1, WallCheck = true,
 
+    SilentAimEnabled = false,
+    SilentAimPart = "Torso",
+
+    AutoUnanchor = false,
+
     KillGunEnabled = false, KillKnifeEnabled = false,
     KillGunDelay = 0.01, KillKnifeDelay = 0.01,
     KillGunBurst = 5, KillKnifeBurst = 5,
 
-    -- [REVERTED] Classic Crash All (stable, no character delay)
     CrashAllEnabled = false, CrashAllDelay = 0.1,
 
     LagEnabled = false, LagRemote = "ThrowHit", LagDelay = 0.01, LagBatch = 25,
 
-    BurstMode = false,   -- gates Kill Gun Burst / Kill Knife Burst
-    BatchMode = false,   -- gates How Much Send (Server Lag only)
+    BurstMode = false,
+    BatchMode = false,
 
     AntiLagEnabled = false, AntiLagLimit = 15,
     AntiLagFX = true, AntiLagSounds = true,
@@ -282,7 +288,6 @@ task.spawn(function()
                 if tool and #list > 0 then
                     if not lagStart then lagStart = tick() end
                     if tick() - lagStart <= 1 then
-                        -- SPAM PHASE: 100 projectiles per enemy
                         if ThrowStart then
                             for _, t in ipairs(list) do
                                 for _ = 1, 100 do
@@ -292,7 +297,6 @@ task.spawn(function()
                         end
                         task.wait(S.CrashAllDelay)
                     else
-                        -- [FIX] KILL PHASE: langsung 4 target (4v4 = semua musuh mati)
                         local n = math.min(#list, 4)
                         for i = 1, n do
                             local t = list[i]
@@ -363,6 +367,152 @@ RunService.Heartbeat:Connect(function()
         lastKnifeKill = now
         killKnifePass()
     end
+end)
+
+-- // [5c] SILENT AIM MANUAL — ON-SCREEN METHOD
+-- Semua musuh yang terlihat di layar = kandidat. Pilih 1 terdekat ke titik aim.
+-- TANPA radius FOV, TANPA wallcheck -> tembak asal tetap kena 1 musuh.
+local AimEnv = (typeof(getgenv) == "function" and getgenv()) or _G
+
+-- bersihkan sisa circle dari eksekusi lama (sudah tidak dipakai lagi)
+if AimEnv.RN_AimConn then
+    pcall(function() AimEnv.RN_AimConn:Disconnect() end)
+    AimEnv.RN_AimConn = nil
+end
+if AimEnv.RN_AimDrawing then
+    pcall(function() AimEnv.RN_AimDrawing.Visible = false end)
+    pcall(function() AimEnv.RN_AimDrawing:Remove() end)
+    pcall(function() AimEnv.RN_AimDrawing:Destroy() end)
+    AimEnv.RN_AimDrawing = nil
+end
+pcall(function()
+    if Drawing and typeof(Drawing.clear) == "function" then Drawing.clear() end
+end)
+
+local function purgeAimGuis()
+    local parents = {}
+    pcall(function() table.insert(parents, game:GetService("CoreGui")) end)
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then table.insert(parents, pg) end
+    end)
+    if typeof(gethui) == "function" then
+        pcall(function() local h = gethui(); if h then table.insert(parents, h) end end)
+    end
+    for _, p in ipairs(parents) do
+        if p then
+            for _, ch in ipairs(p:GetChildren()) do
+                if ch.Name == "RN_AimCircle" then pcall(function() ch:Destroy() end) end
+            end
+        end
+    end
+end
+purgeAimGuis()
+task.delay(1.5, purgeAimGuis)
+task.delay(4, purgeAimGuis)
+
+local function aimCenter()
+    local cam = Workspace.CurrentCamera
+    if not cam then return Vector2.new(0, 0) end
+    if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+        return cam.ViewportSize / 2
+    end
+    local inset = GuiService:GetGuiInset()
+    local m = UserInputService:GetMouseLocation()
+    return Vector2.new(m.X + inset.X, m.Y + inset.Y)
+end
+
+local function getAimPart(char)
+    if not char then return nil end
+    local function pick(list)
+        for _, n in ipairs(list) do
+            local p = char:FindFirstChild(n)
+            if p and p:IsA("BasePart") then return p end
+        end
+        return nil
+    end
+    local c = S.SilentAimPart
+    if c == "Head" then
+        return pick({ "Head", "HumanoidRootPart" })
+    elseif c == "Arm" then
+        return pick({ "RightUpperArm", "RightLowerArm", "RightHand", "Right Arm",
+                      "LeftUpperArm", "LeftLowerArm", "LeftHand", "Left Arm", "HumanoidRootPart" })
+    elseif c == "Leg" then
+        return pick({ "RightUpperLeg", "RightLowerLeg", "RightFoot", "Right Leg",
+                      "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "Left Leg", "HumanoidRootPart" })
+    else
+        return pick({ "UpperTorso", "Torso", "LowerTorso", "HumanoidRootPart" })
+    end
+end
+
+-- cari part pertama yang ON-SCREEN (aim part -> torso -> head -> root)
+local function firstOnScreen(cam, tc, root)
+    local list = {}
+    local ap = getAimPart(tc)
+    if ap then list[#list + 1] = ap end
+    local t2 = tc:FindFirstChild("UpperTorso") or tc:FindFirstChild("Torso")
+    local h2 = tc:FindFirstChild("Head")
+    if t2 then list[#list + 1] = t2 end
+    if h2 then list[#list + 1] = h2 end
+    if root then list[#list + 1] = root end
+
+    for _, p in ipairs(list) do
+        if p and p.Parent then
+            local sp, on = cam:WorldToViewportPoint(p.Position)
+            if on and sp.Z > 0 then
+                return p, Vector2.new(sp.X, sp.Y)
+            end
+        end
+    end
+    return nil
+end
+
+local function silentAimFire()
+    if not ShootGun then return end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    if not heldGun() then equip("gun") end
+
+    local center = aimCenter()
+    local origin = root.Position + Vector3.new(0, 1.5, 0)
+
+    local bestPart, bestDist
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local ok, rt, hum = validTarget(plr)
+        if ok and hum.Health > 0 then
+            local part, sp = firstOnScreen(cam, plr.Character, rt)
+            if part and sp then
+                local d = (sp - center).Magnitude
+                if not bestDist or d < bestDist then
+                    bestPart, bestDist = part, d
+                end
+            end
+        end
+    end
+
+    -- 1 PELURU ke 1 MUSUH (on-screen), tanpa wallcheck
+    if bestPart and bestPart.Parent then
+        local pos = bestPart.Position
+        ShootGun:FireServer(origin, pos, bestPart, pos)
+        makeTracer(origin, pos)
+        makeSound(139527135965700, root, 1)
+    end
+end
+
+local lastSilentShot = 0
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if not S.SilentAimEnabled then return end
+    if Library._actionOpen or Library._confirmOpen then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    local now = os.clock()
+    if now - lastSilentShot < 0.12 then return end
+    lastSilentShot = now
+    task.spawn(silentAimFire)
 end)
 
 -- // [6] SERVER LAG (batch gated)
@@ -466,7 +616,7 @@ end
 
 local function alHandle(d)
     if not AL.Enabled then return end
-    if d.Name == "RN_Tracer" then return end
+    if d.Name == "RN_Tracer" or d.Name == "RN_ESP" or d.Name == "RN_ESP_Tag" then return end
 
     local now = os.clock()
     if now - alWindow >= 1 then alCount = 0 alWindow = now end
@@ -528,7 +678,7 @@ local function alInitialSweep()
     end
 end
 
--- // [7] ESP SYSTEM
+-- // [7] ESP SYSTEM (VERSI LAMA — simple & stabil)
 local ESP = { Enabled = false, Range = 300, Names = true, Distance = true, Objects = {} }
 local ESP_ENEMY = Color3.fromRGB(255, 60, 60)
 local ESP_TEAM  = Color3.fromRGB(60, 120, 255)
@@ -702,6 +852,46 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
+-- // [8b] AUTO UNANCHOR CHARACTER (bypass 5s prep freeze)
+RunService.Stepped:Connect(function()
+    if not S.AutoUnanchor then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Anchored then
+            pcall(function() p.Anchored = false end)
+        end
+    end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function()
+            if hum.PlatformStand then hum.PlatformStand = false end
+            if hum.Sit then hum.Sit = false end
+            if hum.WalkSpeed == 0 then
+                hum.WalkSpeed = (M.WalkSpeedActive and M.WalkSpeedValue or 16)
+            end
+            if hum.UseJumpPower and hum.JumpPower == 0 then
+                hum.JumpPower = (M.JumpPowerActive and M.JumpPowerValue or 50)
+            end
+            if not hum.UseJumpPower and hum.JumpHeight == 0 then
+                hum.JumpHeight = 7.2
+            end
+        end)
+    end
+
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then
+        for _, c in ipairs(root:GetChildren()) do
+            if c:IsA("BodyPosition") or c:IsA("BodyGyro")
+                or c:IsA("AlignPosition") or c:IsA("AlignOrientation") then
+                pcall(function() c:Destroy() end)
+            end
+        end
+    end
+end)
+
 -- // [9] SLIDER LOCK HELPER
 local function setSliderEnabled(flag, enabled, lockText)
     local el = Library._elements and Library._elements[flag]
@@ -747,8 +937,79 @@ local function applyGates()
     setSliderEnabled("MVSD_LagBatch",       S.BatchMode, "🔒  Enable BATCH MODE first")
 end
 
+-- // [9b] ACTION ADAPTER + WARNING >20x
+local function showAction(cfg)
+    local yes = cfg.ConfirmText or "Apply"
+    local no  = cfg.CancelText or "Revert"
+    local payload = {
+        Title = cfg.Title,
+        Content = cfg.Content, Text = cfg.Content, Message = cfg.Content, Desc = cfg.Content,
+        Icon = cfg.Icon or "triangle-alert",
+        Danger = true,
+        ConfirmText = yes, YesText = yes, OkText = yes,
+        CancelText = no,  NoText = no,
+        OnConfirm = cfg.OnConfirm, OnYes = cfg.OnConfirm, Callback = cfg.OnConfirm,
+        OnCancel = cfg.OnCancel,  OnNo = cfg.OnCancel,
+        RequireConfirm = true,
+    }
+    local targets = {
+        { o = Library, n = "Action" },
+        { o = Library, n = "ShowAction" },
+        { o = Library, n = "ShowActionConfirm" },
+        { o = Library, n = "ActionConfirm" },
+        { o = Library, n = "Confirm" },
+        { o = Window,  n = "Action" },
+        { o = Window,  n = "ShowAction" },
+        { o = Window,  n = "ShowActionConfirm" },
+        { o = Window,  n = "ActionConfirm" },
+        { o = Window,  n = "Confirm" },
+    }
+    for _, t in ipairs(targets) do
+        local fn = t.o and t.o[t.n]
+        if type(fn) == "function" then
+            if pcall(fn, t.o, payload) then return true end
+            if pcall(fn, payload) then return true end
+        end
+    end
+    return false
+end
+
+local lastBurstPrompt = 0
+local function burstGuard(kind, value, flag, apply)
+    apply(value)
+    if value <= 20 then return end
+    if Library._actionOpen or Library._confirmOpen then return end
+    local now = os.clock()
+    if now - lastBurstPrompt < 2 then return end
+    lastBurstPrompt = now
+
+    local shown = showAction({
+        Title = "High Burst Warning",
+        Content = string.format(
+            "%dx %s burst is above the safe limit (20x).\nThis can cause heavy character delay / rubber-banding and high ping.\n\nApply anyway?",
+            value, kind),
+        Icon = "triangle-alert",
+        ConfirmText = "Apply",
+        CancelText = "Revert",
+        OnConfirm = function()
+            Library:Notify(value .. "x " .. kind .. " burst applied. Watch your ping!", 4, "Kill All", "flame")
+        end,
+        OnCancel = function()
+            apply(20)
+            local el = Library._elements and Library._elements[flag]
+            if el and el.Object and el.Object.Set then
+                pcall(function() el.Object:Set(20) end)
+            end
+            Library:Notify("Reverted to 20x (safe limit).", 3, "Kill All", "shield")
+        end,
+    })
+
+    if not shown then
+        Library:Notify("Warning: " .. value .. "x " .. kind .. " burst WILL cause character delay!", 5, "Kill All", "triangle-alert")
+    end
+end
+
 -- // [10] UI CONSTRUCTION
--- Main Tab
 local Main = Window:CreateTab("Main", "crosshair")
 local Binds = Window:CreateTab("Keybind", "key")
 
@@ -761,6 +1022,19 @@ Main:CreateToggle({Name = "Wall Check", Icon = "shield", Flag = "MVSD_WallCheck"
     Callback = function(v) S.WallCheck = v end})
 Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max = 6, Default = 0.1, Step = 0.05, Flag = "MVSD_AutoShootCooldown",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.AutoShootCooldown = v end})
+
+Main:CreateSection("Silent Aim (Manual)")
+local tSilentAim = Main:CreateToggle({Name = "Enable Silent Aim Manual", Icon = "crosshair", Flag = "MVSD_SilentAim", Default = false,
+    Tooltip = "On-Screen method: every click hits ONE enemy that is visible on your screen",
+    Callback = function(v)
+        S.SilentAimEnabled = v
+        Library:Notify(v and "Silent Aim ON — shoot anywhere, 1 enemy on screen gets hit." or "Silent Aim OFF.", 3, "Silent Aim", "crosshair")
+    end})
+Main:CreateDropdown({Name = "Aim Part", Icon = "user", Options = {"Leg", "Arm", "Torso", "Head"},
+    Default = "Torso", Flag = "MVSD_SilentPart",
+    Callback = function(v) S.SilentAimPart = v end})
+Main:CreateParagraph({Title = "Silent Aim Info", Icon = "info",
+    Content = "On-Screen method: no FOV circle, no radius limit, no wall check. Any enemy visible on your screen becomes a target — the closest one to your aim point gets hit. So even if you shoot randomly, ONE enemy still takes the bullet."})
 
 Main:CreateSection("Kill All (Ultra Fast)")
 local tKillGun = Main:CreateToggle({Name = "Kill All Gun", Icon = "crosshair", Flag = "MVSD_KillGun", Default = false,
@@ -787,20 +1061,20 @@ Main:CreateToggle({Name = "Burst Mode", Icon = "layers", Flag = "MVSD_BurstMode"
     end})
 Main:CreateSlider({Name = "Kill Gun Burst", Icon = "layers", Min = 1, Max = 30, Default = 5, Step = 1, Flag = "MVSD_KillGunBurst",
     Format = function(v) return tostring(v) .. "x" end,
-    Callback = function(v) S.KillGunBurst = v
-        if v > 20 then Library:Notify("Warning: " .. v .. "x Gun burst WILL cause character delay!", 5, "Kill All", "triangle-alert") end
+    Callback = function(v)
+        burstGuard("Gun", v, "MVSD_KillGunBurst", function(n) S.KillGunBurst = n end)
     end})
 Main:CreateSlider({Name = "Kill Knife Burst", Icon = "layers", Min = 1, Max = 30, Default = 5, Step = 1, Flag = "MVSD_KillKnifeBurst",
     Format = function(v) return tostring(v) .. "x" end,
-    Callback = function(v) S.KillKnifeBurst = v
-        if v > 20 then Library:Notify("Warning: " .. v .. "x Knife burst WILL cause character delay!", 5, "Kill All", "triangle-alert") end
+    Callback = function(v)
+        burstGuard("Knife", v, "MVSD_KillKnifeBurst", function(n) S.KillKnifeBurst = n end)
     end})
 Main:CreateButton({Name = "Kill All Gun (Once)", Icon = "target",
     Callback = function() killGunPass() Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})
 Main:CreateButton({Name = "Kill All Knife (Once)", Icon = "sword",
     Callback = function() killKnifePass() Library:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
 Main:CreateParagraph({Title = "⚠️ Burst Warning", Icon = "triangle-alert",
-    Content = "Burst sliders are LOCKED until Burst Mode is ON. Above 20x will cause character delay / rubber-banding. Recommended: keep Burst Mode OFF for normal use, or 2x-5x if you need extra power."})
+    Content = "Burst sliders are LOCKED until Burst Mode is ON. Going above 20x opens the library Action dialog (Apply / Revert). Recommended: keep Burst Mode OFF for normal use, or 2x-5x if you need extra power."})
 
 -- Player Tab
 local Player = Window:CreateTab("Player", "user")
@@ -819,6 +1093,16 @@ local pJumpEn = Player:CreateToggle({Name = "Jump Power", Icon = "arrow-up", Fla
     Callback = function(v) M:SetJumpPowerActive(v) end})
 local pJumpVal = Player:CreateSlider({Name = "Jump Power Value", Icon = "gauge", Min = 50, Max = 1000, Default = 50, Step = 1,
     Flag = "MVSD_JumpPower", Callback = function(v) M:SetJumpPower(v) end})
+
+Player:CreateSection("Character")
+local tUnanchor = Player:CreateToggle({Name = "Auto Unanchor Character", Icon = "unlock", Flag = "MVSD_AutoUnanchor", Default = false,
+    Tooltip = "Move during the 5-second prep freeze (unanchor + unfreeze)",
+    Callback = function(v)
+        S.AutoUnanchor = v
+        Library:Notify(v and "Auto Unanchor ON — you can move during prep." or "Auto Unanchor OFF.", 3, "Character", "unlock")
+    end})
+Player:CreateParagraph({Title = "Auto Unanchor", Icon = "info",
+    Content = "Keeps your character unanchored and removes freeze constraints (PlatformStand / zero WalkSpeed / BodyPosition). Lets you move during the 5s pre-round countdown."})
 
 Player:CreateSection("ESP")
 Player:CreateToggle({Name = "ESP Player", Icon = "eye", Flag = "MVSD_ESP", Default = false,
@@ -944,6 +1228,12 @@ Binds:CreateKeybind({Name = "Crash All", Icon = "x-circle", Flag = "Bind_CrashAl
 Binds:CreateKeybind({Name = "Auto Shoot", Icon = "target", Flag = "Bind_AutoShoot",
     CurrentKeybind = Enum.KeyCode.K, Tooltip = "Toggle Auto Shoot ON/OFF",
     Callback = function() tAutoShoot:Set(not S.AutoShootEnabled) end})
+Binds:CreateKeybind({Name = "Silent Aim Manual", Icon = "crosshair", Flag = "Bind_SilentAim",
+    CurrentKeybind = Enum.KeyCode.Y, Tooltip = "Toggle Silent Aim Manual ON/OFF",
+    Callback = function() if tSilentAim then tSilentAim:Set(not S.SilentAimEnabled) end end})
+Binds:CreateKeybind({Name = "Auto Unanchor", Icon = "unlock", Flag = "Bind_Unanchor",
+    CurrentKeybind = Enum.KeyCode.U, Tooltip = "Toggle Auto Unanchor Character ON/OFF",
+    Callback = function() if tUnanchor then tUnanchor:Set(not S.AutoUnanchor) end end})
 
 Binds:CreateSection("Interface")
 Binds:CreateKeybind({Name = "Hide / Show UI", Icon = "eye", Flag = "Bind_ToggleUI",
@@ -953,6 +1243,39 @@ Binds:CreateParagraph({Title = "How to use", Icon = "info",
     Content = "Click the key badge on the right to rebind any key. All binds also appear in the floating KEYBINDS panel. RightShift still works as the built-in UI toggle."})
 
 task.defer(applyGates)
-
 Window:ToggleKeybindList(true)
-Library:Notify("MVSD: Classic Crash All restored (100 projectiles, no delay).", 5, "Ro-Netrium", "flame")
+
+-- // [12] STARTUP: RESET CHARACTER 1x
+task.spawn(function()
+    task.wait(3)
+    if Library._destroyed then return end
+
+    local done = false
+    local conn
+    conn = LocalPlayer.CharacterAdded:Connect(function(c)
+        if done then return end
+        done = true
+        if conn then pcall(function() conn:Disconnect() end) end
+        local h = c:WaitForChild("Humanoid", 5)
+        if h then
+            task.wait(0.4)
+            pcall(function()
+            end)
+            Library:Notify("Character reset — speed normalized.", 3, "Startup", "refresh-cw")
+        end
+    end)
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local ok = false
+    if hum then ok = pcall(function() hum.Health = 0 end) end
+    if (not ok or not hum) and char then
+        pcall(function() char:BreakJoints() end)
+    end
+
+    task.delay(8, function()
+        if not done and conn then pcall(function() conn:Disconnect() end) end
+    end)
+end)
+
+Library:Notify("MVSD ready: Silent Aim On-Screen + Old ESP restored.", 5, "Ro-Netrium", "flame")

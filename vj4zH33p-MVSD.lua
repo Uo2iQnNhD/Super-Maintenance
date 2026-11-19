@@ -44,6 +44,8 @@ local S = {
 
     SilentAimEnabled = false,
     SilentAimPart = "Torso",
+    SilentAimMaxDist = 400,
+    SilentAimWallCheck = true,
 
     AutoUnanchor = false,
 
@@ -95,6 +97,39 @@ local function validTarget(plr)
         if pad and pad.Parent and (pos - pad.Position).Magnitude <= 130 then return false end
     end
     return true, root, hum, char
+end
+
+-- [FIX] Deteksi tim valid & status in-match (bukan lobby / spectate)
+local LOBBY_TEAMS = {
+    lobby = true, choosing = true, choose = true, spectator = true, spectators = true,
+    watching = true, watch = true, waiting = true, wait = true,
+    none = true, afk = true, menu = true, idle = true,
+}
+local function teamOk(p)
+    local t = p.Team
+    if not t then return false end
+    local n = string.lower(tostring(t.Name or ""))
+    if n == "" or LOBBY_TEAMS[n] then return false end
+    return true
+end
+
+local function nearPad(pos)
+    for _, pad in ipairs(getPads()) do
+        if pad and pad.Parent and (pos - pad.Position).Magnitude <= 130 then return true end
+    end
+    return false
+end
+
+-- return root HANYA kalau kita benar-benar sedang main di arena
+local function myMatchRoot()
+    if not teamOk(LocalPlayer) then return nil end
+    local char = LocalPlayer.Character
+    if not char or not char:IsDescendantOf(Workspace) then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root or hum.Health <= 0 then return nil end
+    if nearPad(root.Position) then return nil end
+    return root
 end
 
 local function isKnife(t)
@@ -370,11 +405,10 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- // [5c] SILENT AIM MANUAL — ON-SCREEN METHOD
--- Semua musuh yang terlihat di layar = kandidat. Pilih 1 terdekat ke titik aim.
--- TANPA radius FOV, TANPA wallcheck -> tembak asal tetap kena 1 musuh.
+-- // [5c] SILENT AIM MANUAL — ON-SCREEN + WALLCHECK (match-only)
 local AimEnv = (typeof(getgenv) == "function" and getgenv()) or _G
 
--- bersihkan sisa circle dari eksekusi lama (sudah tidak dipakai lagi)
+-- bersihkan sisa circle lama (tidak dipakai lagi)
 if AimEnv.RN_AimConn then
     pcall(function() AimEnv.RN_AimConn:Disconnect() end)
     AimEnv.RN_AimConn = nil
@@ -411,6 +445,36 @@ purgeAimGuis()
 task.delay(1.5, purgeAimGuis)
 task.delay(4, purgeAimGuis)
 
+-- [GUARD] tim valid & status in-match (bukan lobby / spectate)
+local SA_LOBBY = {
+    lobby = true, choosing = true, choose = true, spectator = true, spectators = true,
+    watching = true, watch = true, waiting = true, wait = true,
+    none = true, afk = true, menu = true, idle = true,
+}
+local function saTeamOk(p)
+    local t = p.Team
+    if not t then return false end
+    local n = string.lower(tostring(t.Name or ""))
+    if n == "" or SA_LOBBY[n] then return false end
+    return true
+end
+local function saNearPad(pos)
+    for _, pad in ipairs(getPads()) do
+        if pad and pad.Parent and (pos - pad.Position).Magnitude <= 130 then return true end
+    end
+    return false
+end
+local function saMyRoot()
+    if not saTeamOk(LocalPlayer) then return nil end
+    local char = LocalPlayer.Character
+    if not char or not char:IsDescendantOf(Workspace) then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root or hum.Health <= 0 then return nil end
+    if saNearPad(root.Position) then return nil end
+    return root
+end
+
 local function aimCenter()
     local cam = Workspace.CurrentCamera
     if not cam then return Vector2.new(0, 0) end
@@ -445,7 +509,6 @@ local function getAimPart(char)
     end
 end
 
--- cari part pertama yang ON-SCREEN (aim part -> torso -> head -> root)
 local function firstOnScreen(cam, tc, root)
     local list = {}
     local ap = getAimPart(tc)
@@ -467,38 +530,122 @@ local function firstOnScreen(cam, tc, root)
     return nil
 end
 
+-- [FIX] LINE OF SIGHT: part non-solid ditembus, tembok solid memblokir
+local function saLineOfSight(origin, part, targetChar, baseIgnore)
+    if not part or not part.Parent then return nil end
+    local ignore = {}
+    for _, v in ipairs(baseIgnore) do ignore[#ignore + 1] = v end
+    local from = origin
+
+    for _ = 1, 8 do
+        local dir = part.Position - from
+        if dir.Magnitude <= 0.05 then return nil end
+
+        local rp = RaycastParams.new()
+        rp.FilterType = Enum.RaycastFilterType.Exclude
+        rp.FilterDescendantsInstances = ignore
+        rp.IgnoreWater = true
+
+        local hit = Workspace:Raycast(from, dir, rp)
+        if not hit or not hit.Instance then return nil end
+
+        if hit.Instance:IsDescendantOf(targetChar) then
+            return hit.Position, hit.Instance
+        end
+
+        -- penghalang non-solid (efek / kaca / dekorasi) -> tembus & lanjut
+        local solid, trans = true, 0
+        pcall(function() solid = hit.Instance.CanCollide end)
+        pcall(function() trans = hit.Instance.Transparency end)
+        if (not solid) or trans >= 0.9 then
+            ignore[#ignore + 1] = hit.Instance
+            from = hit.Position + dir.Unit * 0.05
+        else
+            return nil -- tembok solid -> gagal
+        end
+    end
+    return nil
+end
+
 local function silentAimFire()
     if not ShootGun then return end
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+
+    -- harus in-match & benar-benar pegang gun
+    local myRoot = saMyRoot()
+    if not myRoot then return end
+    if not heldGun() then return end
+
     local cam = Workspace.CurrentCamera
     if not cam then return end
-    if not heldGun() then equip("gun") end
 
+    local myTeam = LocalPlayer.Team
     local center = aimCenter()
-    local origin = root.Position + Vector3.new(0, 1.5, 0)
+    local origin = myRoot.Position + Vector3.new(0, 1.5, 0)
 
-    local bestPart, bestDist
+    -- kandidat: satu match, on-screen, dalam jarak
+    local cands = {}
     for _, plr in ipairs(Players:GetPlayers()) do
-        local ok, rt, hum = validTarget(plr)
-        if ok and hum.Health > 0 then
-            local part, sp = firstOnScreen(cam, plr.Character, rt)
-            if part and sp then
-                local d = (sp - center).Magnitude
-                if not bestDist or d < bestDist then
-                    bestPart, bestDist = part, d
+        if plr ~= LocalPlayer and saTeamOk(plr) then
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local rt = char and char:FindFirstChild("HumanoidRootPart")
+            if char and hum and rt and hum.Health > 0 and char:IsDescendantOf(Workspace) then
+                local d3 = (rt.Position - myRoot.Position).Magnitude
+                if d3 <= S.SilentAimMaxDist and not saNearPad(rt.Position) then
+                    local part, sp = firstOnScreen(cam, char, rt)
+                    if part and sp then
+                        cands[#cands + 1] = { char = char, root = rt, part = part, sp = sp, team = plr.Team, d3 = d3 }
+                    end
                 end
             end
         end
     end
+    if #cands == 0 then return end
 
-    -- 1 PELURU ke 1 MUSUH (on-screen), tanpa wallcheck
-    if bestPart and bestPart.Parent then
-        local pos = bestPart.Position
-        ShootGun:FireServer(origin, pos, bestPart, pos)
-        makeTracer(origin, pos)
-        makeSound(139527135965700, root, 1)
+    -- hanya tim lawan dari match kita
+    local oppTeam, oppD
+    for _, c in ipairs(cands) do
+        if c.team ~= myTeam and (not oppD or c.d3 < oppD) then
+            oppD, oppTeam = c.d3, c.team
+        end
+    end
+    if not oppTeam then return end
+
+    local list = {}
+    for _, c in ipairs(cands) do
+        if c.team == oppTeam then
+            c.aimDist = (c.sp - center).Magnitude
+            list[#list + 1] = c
+        end
+    end
+    if #list == 0 then return end
+    table.sort(list, function(a, b) return a.aimDist < b.aimDist end)
+
+    local baseIgnore = { LocalPlayer.Character, cam }
+
+    -- [FIX] wallcheck per kandidat: gagal -> coba part lain -> gagal -> musuh berikutnya
+    for _, c in ipairs(list) do
+        local tryParts = { c.part }
+        local t2 = c.char:FindFirstChild("UpperTorso") or c.char:FindFirstChild("Torso")
+        local h2 = c.char:FindFirstChild("Head")
+        if t2 then tryParts[#tryParts + 1] = t2 end
+        if h2 then tryParts[#tryParts + 1] = h2 end
+        if c.root then tryParts[#tryParts + 1] = c.root end
+
+        for _, p in ipairs(tryParts) do
+            local hitPos, hitInst
+            if S.SilentAimWallCheck then
+                hitPos, hitInst = saLineOfSight(origin, p, c.char, baseIgnore)
+            elseif p and p.Parent then
+                hitPos, hitInst = p.Position, p
+            end
+            if hitPos and hitInst then
+                ShootGun:FireServer(origin, hitPos, hitInst, hitPos)
+                makeTracer(origin, hitPos)
+                makeSound(139527135965700, myRoot, 1)
+                return
+            end
+        end
     end
 end
 
@@ -1025,16 +1172,20 @@ Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max 
 
 Main:CreateSection("Silent Aim (Manual)")
 local tSilentAim = Main:CreateToggle({Name = "Enable Silent Aim Manual", Icon = "crosshair", Flag = "MVSD_SilentAim", Default = false,
-    Tooltip = "On-Screen method: every click hits ONE enemy that is visible on your screen",
+    Tooltip = "Every click hits ONE enemy visible on your screen (match-only)",
     Callback = function(v)
         S.SilentAimEnabled = v
-        Library:Notify(v and "Silent Aim ON — shoot anywhere, 1 enemy on screen gets hit." or "Silent Aim OFF.", 3, "Silent Aim", "crosshair")
+        Library:Notify(v and "Silent Aim ON — 1 target per click." or "Silent Aim OFF.", 3, "Silent Aim", "crosshair")
     end})
+Main:CreateToggle({Name = "Silent Aim Wall Check", Icon = "shield", Flag = "MVSD_SilentWall", Default = true,
+    Tooltip = "ON = bullets never go through walls. If the closest enemy is blocked, it tries the next one.",
+    Callback = function(v) S.SilentAimWallCheck = v end})
 Main:CreateDropdown({Name = "Aim Part", Icon = "user", Options = {"Leg", "Arm", "Torso", "Head"},
     Default = "Torso", Flag = "MVSD_SilentPart",
     Callback = function(v) S.SilentAimPart = v end})
-Main:CreateParagraph({Title = "Silent Aim Info", Icon = "info",
-    Content = "On-Screen method: no FOV circle, no radius limit, no wall check. Any enemy visible on your screen becomes a target — the closest one to your aim point gets hit. So even if you shoot randomly, ONE enemy still takes the bullet."})
+Main:CreateSlider({Name = "Aim Max Distance", Icon = "gauge", Min = 50, Max = 3000, Default = 400, Step = 10, Flag = "MVSD_SilentMaxDist",
+    Format = function(v) return tostring(v) .. " studs" end,
+    Callback = function(v) S.SilentAimMaxDist = v end})
 
 Main:CreateSection("Kill All (Ultra Fast)")
 local tKillGun = Main:CreateToggle({Name = "Kill All Gun", Icon = "crosshair", Flag = "MVSD_KillGun", Default = false,
@@ -1261,7 +1412,7 @@ task.spawn(function()
             task.wait(0.4)
             pcall(function()
             end)
-            Library:Notify("Character reset — speed normalized.", 3, "Startup", "refresh-cw")
+            Library:Notify("Character reset, speed normalized", 3, "Startup", "refresh-cw")
         end
     end)
 

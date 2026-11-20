@@ -1,7 +1,7 @@
 --[[
-    RO-NETRIUM MVSD — SUPER ULTRA (FIXED)
-    Silent Aim: On-Screen Manual Click (PC + HP) + WALLCHECK | Old ESP | Action Warning | Startup Reset
-    + Toggle Keybind / Net Performance / Quick Bar | Default theme Royal
+    RO-NETRIUM: Murderer Vs Sheriff Duels
+    This script is still in the testing stage, expect bugs
+    Powered: Zaycapcay & Exterminate0
 ]]
 
 -- // [1] INITIALIZATION & SERVICES

@@ -13,7 +13,8 @@ local Window = Library:CreateWindow({
     Title = "Ro-Netrium", Subtitle = "Created By Zaycapcay & Exterminate0",
     Tags = {
         { Text = "MVSD",       Icon = "gamepad-2", Color = Color3.fromRGB(255,204,0), TextColor = Color3.new(0,0,0) },
-        { Text = "SUPER ULTRA", Icon = "flame",    Color = Color3.fromRGB(255,70,90), TextColor = Color3.new(1,1,1) },
+        { Text = "RNET-A5", Icon = "flame",    Color = Color3.fromRGB(255,70,90), TextColor = Color3.new(1,1,1) },
+        { Text = "RELEASE", Icon = "newspaper",    Color = Color3.fromRGB(0,0,255), TextColor = Color3.new(2,2,2) },
     },
     QuickBar = true, NetStatsBar = true, InfoTab = true, ToolsTab = true, ThemeTab = true, SaveLoad = true,
     ConfirmTitle = "Ro-Netrium", ConfirmSubtitle = "Close Ro-Netrium? Unsaved changes will be lost.",
@@ -1228,23 +1229,23 @@ local Binds = Window:CreateTab("Keybind", "key")
 
 Main:CreateSection("Auto Shoot")
 local tAutoShoot = Main:CreateToggle({Name = "Auto Shoot", Icon = "target", Flag = "MVSD_AutoShoot", Default = false,
-    Tooltip = "Automatically shoots the nearest enemy while holding a gun; knife = pause",
+    Tooltip = "Automatically shoots the nearest enemy while holding a gun, knife = pause When auto shoot on",
     Callback = function(v) S.AutoShootEnabled = v end})
 Main:CreateToggle({Name = "Wall Check", Icon = "shield", Flag = "MVSD_WallCheck", Default = true,
-    Tooltip = "Only shoot enemies you can actually see (no shooting through walls)",
+    Tooltip = "Only shoot enemies you can actually see",
     Callback = function(v) S.WallCheck = v end})
 Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max = 6, Default = 0.1, Step = 0.05, Flag = "MVSD_AutoShootCooldown",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.AutoShootCooldown = v end})
 
 Main:CreateSection("Silent Aim (Manual)")
 local tSilentAim = Main:CreateToggle({Name = "Enable Silent Aim Manual", Icon = "crosshair", Flag = "MVSD_SilentAim", Default = false,
-    Tooltip = "On-screen method: each manual click hits ONE enemy nearest to your aim. Never auto-fires.",
+    Tooltip = "On-screen method: each manual click hits ONE enemy nearest to your aim",
     Callback = function(v)
         S.SilentAimEnabled = v
-        Library:Notify(v and "Silent Aim ON — 1 target per click." or "Silent Aim OFF.", 3, "Silent Aim", "crosshair")
+        Library:Notify(v and "Silent Aim ON, 1 target per click" or "Silent Aim OFF.", 3, "Silent Aim", "crosshair")
     end})
 Main:CreateToggle({Name = "Silent Aim Wall Check", Icon = "shield", Flag = "MVSD_SilentWall", Default = true,
-    Tooltip = "ON = bullets never go through walls. If the closest enemy is blocked, it tries the next one.",
+    Tooltip = "ON = bullets never go through walls, If the closest enemy is blocked, it tries the next one",
     Callback = function(v) S.SilentAimWallCheck = v end})
 Main:CreateDropdown({Name = "Aim Part", Icon = "user", Options = {"Leg", "Arm", "Torso", "Head"},
     Default = "Torso", Flag = "MVSD_SilentPart",
@@ -1253,14 +1254,14 @@ Main:CreateSlider({Name = "Aim Max Distance", Icon = "gauge", Min = 50, Max = 15
     Format = function(v) return tostring(v) .. " studs" end,
     Callback = function(v) S.SilentAimMaxDist = v end})
 Main:CreateParagraph({Title = "Silent Aim Info", Icon = "info",
-    Content = "On-Screen method, match-only. Silent Aim is IGNORED while you are in the lobby or spectating another match, and it only works while you actually hold a gun (no auto-equip). Targets are limited to the enemy team of YOUR match within Aim Max Distance. Each click hits ONE enemy nearest to your aim point."})
+    Content = "On-Screen Method, and it only works while you actually hold a gun and click Anywhere\nTargets are limited to the enemy team of Your match within Aim Max Distance\nEach click hits ONE enemy nearest to your aim point"})
 
 Main:CreateSection("Kill All (Ultra Fast)")
 local tKillGun = Main:CreateToggle({Name = "Kill All Gun", Icon = "crosshair", Flag = "MVSD_KillGun", Default = false,
-    Tooltip = "Heartbeat-driven fire. Pauses Knife kill.",
+    Tooltip = "High-speed shooting, Pauses Knife kill",
     Callback = function(v) S.KillGunEnabled = v end})
 local tKillKnife = Main:CreateToggle({Name = "Kill All Knife", Icon = "sword", Flag = "MVSD_KillKnife", Default = false,
-    Tooltip = "Heartbeat-driven stab/throw. Auto-paused if Kill Gun is ON.",
+    Tooltip = "Throwing at high speed, Auto-paused if Kill Gun is ON",
     Callback = function(v) S.KillKnifeEnabled = v end})
 Main:CreateSlider({Name = "Kill Gun Delay", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.01, Step = 0.01, Flag = "MVSD_KillGunDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillGunDelay = v end})
@@ -1268,14 +1269,14 @@ Main:CreateSlider({Name = "Kill Knife Delay", Icon = "timer", Min = 0.01, Max = 
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.KillKnifeDelay = v end})
 
 Main:CreateToggle({Name = "Burst Mode", Icon = "layers", Flag = "MVSD_BurstMode", Default = false,
-    Tooltip = "Unlocks the burst sliders below. OFF = 1 hit per tick (safe, no delay).",
+    Tooltip = "Unlocks the burst sliders below, OFF = 1 hit per tick/Back to Normal",
     Callback = function(v)
         S.BurstMode = v
         applyGates()
         if v then
-            Library:Notify("Burst Mode ON — burst sliders unlocked. Watch your ping!", 4, "Burst", "layers")
+            Library:Notify("Burst Mode ON, burst sliders unlocked", 4, "Burst", "layers")
         else
-            Library:Notify("Burst Mode OFF — burst forced to 1x (safe).", 3, "Burst", "shield")
+            Library:Notify("Burst Mode OFF, burst forced to 1x", 3, "Burst", "shield")
         end
     end})
 Main:CreateSlider({Name = "Kill Gun Burst", Icon = "layers", Min = 1, Max = 30, Default = 5, Step = 1, Flag = "MVSD_KillGunBurst",
@@ -1291,9 +1292,9 @@ Main:CreateSlider({Name = "Kill Knife Burst", Icon = "layers", Min = 1, Max = 30
 Main:CreateButton({Name = "Kill All Gun (Once)", Icon = "target",
     Callback = function() killGunPass() Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})
 Main:CreateButton({Name = "Kill All Knife (Once)", Icon = "sword",
-    Callback = function() killKnifePass() Library:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
+    Callback = function() killKnifePass() ibrary:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
 Main:CreateParagraph({Title = "⚠️ Burst Warning", Icon = "triangle-alert",
-    Content = "Burst sliders are LOCKED until Burst Mode is ON. Going above 20x opens the library Action dialog (Apply / Revert). Recommended: keep Burst Mode OFF for normal use, or 2x-5x if you need extra power."})
+    Content = "Burst sliders are LOCKED until Burst Mode is ON, Recommended: keep Burst Mode OFF for normal use, or 5x-10x if you need extra power"})
 
 -- Player Tab
 local Player = Window:CreateTab("Player", "user")
@@ -1315,17 +1316,17 @@ local pJumpVal = Player:CreateSlider({Name = "Jump Power Value", Icon = "gauge",
 
 Player:CreateSection("Character")
 local tUnanchor = Player:CreateToggle({Name = "Auto Unanchor Character", Icon = "unlock", Flag = "MVSD_AutoUnanchor", Default = false,
-    Tooltip = "Move during the 5-second prep freeze (unanchor + unfreeze)",
+    Tooltip = "Can Move during the 5-second prep freeze",
     Callback = function(v)
         S.AutoUnanchor = v
-        Library:Notify(v and "Auto Unanchor ON — you can move during prep." or "Auto Unanchor OFF.", 3, "Character", "unlock")
+        Library:Notify(v and "Auto Unanchor ON, you can move during prep." or "Auto Unanchor OFF.", 3, "Character", "unlock")
     end})
 Player:CreateParagraph({Title = "Auto Unanchor", Icon = "info",
-    Content = "Keeps your character unanchored and removes freeze constraints (PlatformStand / zero WalkSpeed / BodyPosition). Lets you move during the 5s pre-round countdown."})
+    Content = "Keeps your character unanchored and removes freeze constraints, Lets you move during the 5s pre-round countdown"})
 
 Player:CreateSection("ESP")
 Player:CreateToggle({Name = "ESP Player", Icon = "eye", Flag = "MVSD_ESP", Default = false,
-    Tooltip = "Match-only ESP. Auto-disables & destroys library ESP to prevent overlap.",
+    Tooltip = "Match-only ESP, Auto-disables & destroys library ESP to prevent overlap",
     Callback = function(v)
         S.ESPEnabled = v
         ESP.Enabled = v
@@ -1348,7 +1349,7 @@ Player:CreateToggle({Name = "ESP Distance", Icon = "gauge", Flag = "MVSD_ESPDist
 Player:CreateSlider({Name = "ESP Match Range", Icon = "gauge", Min = 100, Max = 2000, Default = 300, Step = 10, Flag = "MVSD_ESPRange",
     Format = function(v) return tostring(v) .. " studs" end, Callback = function(v) S.ESPRange = v ESP.Range = v end})
 Player:CreateParagraph({Title = "Note", Icon = "info",
-    Content = "Player tab & Quick Bar share the same engine (Library.Movement). ESP only shows your current match."})
+    Content = "Player tab & Quick Bar share the same engine, ESP only shows your current match"})
 
 -- Two-Way Sync for Movement (installed once, targets refreshed each execute)
 local QB = Window.QuickBarRows
@@ -1379,12 +1380,12 @@ local Misc = Window:CreateTab("Misc", "skull")
 
 Misc:CreateSection("Crash All")
 local tCrashAll = Misc:CreateToggle({Name = "Crash All", Icon = "x-circle", Flag = "MVSD_CrashAll", Default = false,
-    Tooltip = "Classic stable method: 100 knife throws per enemy. Pauses Kill All & Auto Shoot.",
+    Tooltip = "100 knife throws per enemy, Pauses Kill All & Auto Shoot.",
     Callback = function(v) S.CrashAllEnabled = v lagStart = nil end})
 Misc:CreateSlider({Name = "Crash All Delay", Icon = "clock", Min = 0.06, Max = 0.3, Default = 0.1, Step = 0.01, Flag = "MVSD_CrashDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.CrashAllDelay = v end})
-Misc:CreateParagraph({Title = "Crash Mode (Classic)", Icon = "flame",
-    Content = "Spam phase: 100 knife throws per enemy each tick for 1s. Kill phase: hits 1-4 random enemies, then waits 0.5s. Repeats automatically. This classic timing is stable and does not cause character delay."})
+Misc:CreateParagraph({Title = "Crash Mode (Super)", Icon = "flame",
+    Content = "100 knife throws per enemy each tick for 1s\nKill Phase: hits 4 enemies, then waits 0.5s, Repeats automatically"})
 
 Misc:CreateSection("Server Lag")
 Misc:CreateToggle({Name = "Server Lag", Icon = "wifi", Flag = "MVSD_Lag", Default = false,
@@ -1394,14 +1395,14 @@ Misc:CreateDropdown({Name = "Select Remote", Icon = "send", Options = {"ThrowHit
 Misc:CreateSlider({Name = "Cooldown Send", Icon = "timer", Min = 0.01, Max = 0.5, Default = 0.01, Step = 0.01, Flag = "MVSD_LagDelay",
     Format = function(v) return string.format("%.2fs", v) end, Callback = function(v) S.LagDelay = v end})
 Misc:CreateToggle({Name = "Batch Mode", Icon = "layers", Flag = "MVSD_BatchMode", Default = false,
-    Tooltip = "Unlocks How Much Send. OFF = 1 remote per tick (safe, no delay).",
+    Tooltip = "Unlocks How Much Send, OFF = 1 remote per tick/back to normal",
     Callback = function(v)
         S.BatchMode = v
         applyGates()
         if v then
-            Library:Notify("Batch Mode ON — How Much Send unlocked. This is the main delay source!", 5, "Server Lag", "triangle-alert")
+            Library:Notify("Batch Mode ON, How Much Send unlocked, This is the main delay source", 5, "Server Lag", "triangle-alert")
         else
-            Library:Notify("Batch Mode OFF — send forced to 1 (safe).", 3, "Server Lag", "shield")
+            Library:Notify("Batch Mode OFF, send forced to 1", 3, "Server Lag", "shield")
         end
     end})
 Misc:CreateSlider({Name = "How Much Send", Icon = "layers", Min = 1, Max = 9999, Default = 25, Step = 1, Flag = "MVSD_LagBatch",
@@ -1412,24 +1413,24 @@ Misc:CreateSlider({Name = "How Much Send", Icon = "layers", Min = 1, Max = 9999,
         end
     end})
 Misc:CreateParagraph({Title = "⚠️ Delay Source", Icon = "triangle-alert",
-    Content = "How Much Send only affects Server Lag now (Crash All uses its own fixed 100). Start at 5-25x. Above 100x causes heavy character delay. Do not stack high Batch with high Burst Mode."})
+    Content = "How Much Send only affects Server Lag now, Start at 5-25x. Above 100x causes heavy character delay/nDo not stack high Batch with high Burst Mode"})
 
 Misc:CreateSection("Anti Lag")
 Misc:CreateToggle({Name = "Anti Lag", Icon = "shield", Flag = "MVSD_AntiLag", Default = false,
-    Tooltip = "Removes enemy gun-shot VFX spam (tracers, muzzle flash, impacts) that lags mobile.",
+    Tooltip = "Removes enemy gun-shot VFX spam (tracers, muzzle flash, impacts) that lags mobile",
     Callback = function(v)
         S.AntiLagEnabled = v
         AL.Enabled = v
         if v then
             alCount, alWindow, alSpamUntil = 0, os.clock(), 0
             alInitialSweep()
-            Library:Notify("Anti Lag ON — gun FX spam will be cleaned.", 3, "Anti Lag", "shield")
+            Library:Notify("Anti Lag ON, gun FX spam will be cleaned", 3, "Anti Lag", "shield")
         else
             Library:Notify("Anti Lag OFF.", 3, "Anti Lag", "shield")
         end
     end})
 Misc:CreateToggle({Name = "Remove Gun FX", Icon = "sparkles", Flag = "MVSD_AntiLagFX", Default = true,
-    Tooltip = "Delete tracers / bullets / muzzle flash / particles / beams from enemy Kill All Gun",
+    Tooltip = "Remove all visual effects\nReducing lag when enemies kill all used gun",
     Callback = function(v) S.AntiLagFX = v AL.RemoveFX = v end})
 Misc:CreateToggle({Name = "Mute Spam Sounds", Icon = "bell", Flag = "MVSD_AntiLagSounds", Default = true,
     Tooltip = "Mute & remove gunshot sound spam",
@@ -1437,8 +1438,8 @@ Misc:CreateToggle({Name = "Mute Spam Sounds", Icon = "bell", Flag = "MVSD_AntiLa
 Misc:CreateSlider({Name = "Anti Lag Limit", Icon = "gauge", Min = 5, Max = 60, Default = 15, Step = 1, Flag = "MVSD_AntiLagLimit",
     Format = function(v) return tostring(v) .. "/s" end,
     Callback = function(v) S.AntiLagLimit = v AL.MaxObjectsPerSecond = v end})
-Misc:CreateParagraph({Title = "Anti Lag v2", Icon = "info",
-    Content = "Detects tracers by shape (even unnamed parts), removes muzzle flash / particles / beams / lights, and mutes gunshot spam. Map, tools and characters stay safe."})
+Misc:CreateParagraph({Title = "Anti Lag", Icon = "info",
+    Content = "Detecting spam parts/visual effects, Such as gun sound, Gun FX, etc."})
 
 -- // [11] KEYBIND TAB
 Binds:CreateSection("Combat Binds")
@@ -1462,23 +1463,23 @@ Binds:CreateKeybind({Name = "Auto Unanchor", Icon = "unlock", Flag = "Bind_Unanc
     Callback = function() if tUnanchor then tUnanchor:Set(not S.AutoUnanchor) end end})
 
 Binds:CreateSection("Interface")
-Binds:CreateKeybind({Name = "Hide / Show UI", Icon = "eye", Flag = "Bind_ToggleUI",
+Binds:CreateKeybind({Name = "Hide/Show Interface", Icon = "eye", Flag = "Bind_ToggleUI",
     CurrentKeybind = Enum.KeyCode.RightControl, Tooltip = "Toggle the whole interface",
     Callback = function() Window:Toggle() end})
 
 -- [NEW] Visibility toggles (default hidden on mobile to reduce clutter)
 Binds:CreateSection("Interface Visibility")
 Binds:CreateToggle({Name = "Show Keybind List", Icon = "key", Flag = "RN_ShowKeybindList", Default = not IS_MOBILE,
-    Tooltip = "Show / hide the floating KEYBINDS panel (hide on HP to reduce clutter)",
+    Tooltip = "Show/hide the floating Keybinds panel",
     Callback = function(v) setKeybindList(v) end})
 Binds:CreateToggle({Name = "Show Quick Bar 1", Icon = "gauge", Flag = "RN_ShowQuickBar", Default = not IS_MOBILE,
-    Tooltip = "Show / hide the floating Quick Bar (movement). Hide on HP to reduce clutter.",
+    Tooltip = "Show/hide the floating Quick Bar panel",
     Callback = function(v) setQuickBar(v) end})
 Binds:CreateToggle({Name = "Show Net Performance", Icon = "activity", Flag = "RN_ShowNetStats", Default = not IS_MOBILE,
-    Tooltip = "Show / hide the Net Stats / performance bars. Hide on HP to reduce clutter.",
+    Tooltip = "Show/hide the Net performance panel",
     Callback = function(v) setNetStats(v) end})
 Binds:CreateParagraph({Title = "How to use", Icon = "info",
-    Content = "Click the key badge on the right to rebind any key. Use the Visibility toggles above to hide Keybind / Quick Bar / Net Performance on mobile. RightShift still works as the built-in UI toggle."})
+    Content = "Click the key badge on the right to rebind any key, Use the Visibility toggles above to hide Quick bar, Net Performance, Keybind"})
 
 -- apply visibility defaults now
 setKeybindList(not IS_MOBILE)

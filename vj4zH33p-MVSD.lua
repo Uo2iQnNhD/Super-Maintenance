@@ -1,6 +1,7 @@
 --[[
-    RO-NETRIUM MVSD — SUPER ULTRA
-    Silent Aim: On-Screen Method | Old ESP | Action Warning | Startup Reset
+    RO-NETRIUM MVSD — SUPER ULTRA (FIXED)
+    Silent Aim: On-Screen Manual Click (PC + HP) + WALLCHECK | Old ESP | Action Warning | Startup Reset
+    + Toggle Keybind / Net Performance / Quick Bar | Default theme Royal
 ]]
 
 -- // [1] INITIALIZATION & SERVICES
@@ -18,6 +19,16 @@ local Window = Library:CreateWindow({
     ConfirmTitle = "Ro-Netrium", ConfirmSubtitle = "Close Ro-Netrium? Unsaved changes will be lost.",
 })
 if not Window then return end
+
+-- // [1b] DEFAULT THEME = ROYAL (bukan RGB)
+pcall(function() Library:SetTheme("Royal") end)
+pcall(function()
+    local tp = Library._elements and Library._elements["ZethHub_ThemePreset"]
+    if tp and tp.Object and tp.Object.Set then tp.Object:Set("Royal") end
+    local rb = Library._elements and Library._elements["ZethHub_Rainbow"]
+    if rb and rb.Object and rb.Object.Set then rb.Object:Set(false) end
+end)
+
 Library:Notify("Ro-Netrium MVSD loaded! RightShift = show/hide.", 5, "Ro-Netrium", "sparkles")
 
 local Players = game:GetService("Players")
@@ -31,6 +42,7 @@ local GuiService = game:GetService("GuiService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local M = Library.Movement
+local IS_MOBILE = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
 local ShootGun = Remotes and Remotes:FindFirstChild("ShootGun")
@@ -44,7 +56,7 @@ local S = {
 
     SilentAimEnabled = false,
     SilentAimPart = "Torso",
-    SilentAimMaxDist = 3000,
+    SilentAimMaxDist = 400,
     SilentAimWallCheck = true,
 
     AutoUnanchor = false,
@@ -221,7 +233,7 @@ local function visiblePart(plr)
     if not char or not tc then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    local origin = root.Position + Vector3.new(0, 1.5, 0)
+    local origin = root.Position
 
     local targets = {}
     local torso = tc:FindFirstChild("UpperTorso") or tc:FindFirstChild("Torso")
@@ -241,7 +253,7 @@ local function visiblePart(plr)
         if dir.Magnitude > 0.05 then
             local hit = Workspace:Raycast(origin, dir, rp)
             if hit and hit.Instance and hit.Instance:IsDescendantOf(tc) then
-                return part, hit.Position, hit.Instance
+                return part, part.Position
             end
         end
     end
@@ -260,8 +272,8 @@ local function getBestTarget()
             local d = (rt.Position - myRoot.Position).Magnitude
             if not bestDist or d < bestDist then
                 if S.WallCheck then
-                    local part, pos, hit = visiblePart(plr)
-                    if part then bestPos, bestHit, bestDist = pos, hit, d end
+                    local part, pos = visiblePart(plr)
+                    if part then bestPos, bestHit, bestDist = pos, part, d end
                 else
                     bestPos, bestHit, bestDist = rt.Position, rt, d
                 end
@@ -274,7 +286,7 @@ end
 local function fireAtBestTarget()
     local bestPos, bestHit, myRoot = getBestTarget()
     if bestPos and bestHit and myRoot then
-        local origin = myRoot.Position + Vector3.new(0, 1.5, 0)
+        local origin = myRoot.Position
         makeSound(139527135965700, myRoot, 1)
         makeTracer(origin, bestPos)
         if ShootGun then ShootGun:FireServer(origin, bestPos, bestHit, bestPos) end
@@ -309,7 +321,7 @@ local function targetList()
     return out
 end
 
--- // [5a] CRASH ALL — CLASSIC METHOD (100 projectiles, kill 4 targets)
+-- // [5a] CRASH ALL — CLASSIC METHOD
 local lagStart = nil
 task.spawn(function()
     while true do
@@ -350,7 +362,7 @@ task.spawn(function()
     end
 end)
 
--- // [5b] KILL ALL — ULTRA FAST (Heartbeat, burst gated)
+-- // [5b] KILL ALL — ULTRA FAST
 local function killGunPass(burst)
     if not ShootGun then return end
     local char = LocalPlayer.Character
@@ -404,11 +416,9 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- // [5c] SILENT AIM MANUAL — ON-SCREEN METHOD
--- // [5c] SILENT AIM MANUAL — ON-SCREEN + WALLCHECK (match-only)
+-- // [5c] SILENT AIM — ON-SCREEN MANUAL CLICK (PC mouse + HP tap) + WALLCHECK
 local AimEnv = (typeof(getgenv) == "function" and getgenv()) or _G
 
--- bersihkan sisa circle lama (tidak dipakai lagi)
 if AimEnv.RN_AimConn then
     pcall(function() AimEnv.RN_AimConn:Disconnect() end)
     AimEnv.RN_AimConn = nil
@@ -444,36 +454,6 @@ end
 purgeAimGuis()
 task.delay(1.5, purgeAimGuis)
 task.delay(4, purgeAimGuis)
-
--- [GUARD] tim valid & status in-match (bukan lobby / spectate)
-local SA_LOBBY = {
-    lobby = true, choosing = true, choose = true, spectator = true, spectators = true,
-    watching = true, watch = true, waiting = true, wait = true,
-    none = true, afk = true, menu = true, idle = true,
-}
-local function saTeamOk(p)
-    local t = p.Team
-    if not t then return false end
-    local n = string.lower(tostring(t.Name or ""))
-    if n == "" or SA_LOBBY[n] then return false end
-    return true
-end
-local function saNearPad(pos)
-    for _, pad in ipairs(getPads()) do
-        if pad and pad.Parent and (pos - pad.Position).Magnitude <= 130 then return true end
-    end
-    return false
-end
-local function saMyRoot()
-    if not saTeamOk(LocalPlayer) then return nil end
-    local char = LocalPlayer.Character
-    if not char or not char:IsDescendantOf(Workspace) then return nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not hum or not root or hum.Health <= 0 then return nil end
-    if saNearPad(root.Position) then return nil end
-    return root
-end
 
 local function aimCenter()
     local cam = Workspace.CurrentCamera
@@ -530,16 +510,16 @@ local function firstOnScreen(cam, tc, root)
     return nil
 end
 
--- [FIX] LINE OF SIGHT: part non-solid ditembus, tembok solid memblokir
-local function saLineOfSight(origin, part, targetChar, baseIgnore)
-    if not part or not part.Parent then return nil end
+-- [WALLCHECK] boolean line-of-sight: non-solid ditembus, tembok solid memblokir
+local function saVisible(origin, part, targetChar, baseIgnore)
+    if not part or not part.Parent then return false end
     local ignore = {}
     for _, v in ipairs(baseIgnore) do ignore[#ignore + 1] = v end
     local from = origin
 
     for _ = 1, 8 do
         local dir = part.Position - from
-        if dir.Magnitude <= 0.05 then return nil end
+        if dir.Magnitude <= 0.05 then return true end
 
         local rp = RaycastParams.new()
         rp.FilterType = Enum.RaycastFilterType.Exclude
@@ -547,13 +527,12 @@ local function saLineOfSight(origin, part, targetChar, baseIgnore)
         rp.IgnoreWater = true
 
         local hit = Workspace:Raycast(from, dir, rp)
-        if not hit or not hit.Instance then return nil end
+        if not hit or not hit.Instance then return false end
 
         if hit.Instance:IsDescendantOf(targetChar) then
-            return hit.Position, hit.Instance
+            return true
         end
 
-        -- penghalang non-solid (efek / kaca / dekorasi) -> tembus & lanjut
         local solid, trans = true, 0
         pcall(function() solid = hit.Instance.CanCollide end)
         pcall(function() trans = hit.Instance.Transparency end)
@@ -561,17 +540,17 @@ local function saLineOfSight(origin, part, targetChar, baseIgnore)
             ignore[#ignore + 1] = hit.Instance
             from = hit.Position + dir.Unit * 0.05
         else
-            return nil -- tembok solid -> gagal
+            return false
         end
     end
-    return nil
+    return false
 end
 
+-- [METHOD] On-screen, match-only, hold-gun, 1 musuh terdekat ke aim per click + WALLCHECK
 local function silentAimFire()
     if not ShootGun then return end
 
-    -- harus in-match & benar-benar pegang gun
-    local myRoot = saMyRoot()
+    local myRoot = myMatchRoot()
     if not myRoot then return end
     if not heldGun() then return end
 
@@ -582,16 +561,15 @@ local function silentAimFire()
     local center = aimCenter()
     local origin = myRoot.Position + Vector3.new(0, 1.5, 0)
 
-    -- kandidat: satu match, on-screen, dalam jarak
     local cands = {}
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and saTeamOk(plr) then
+        if plr ~= LocalPlayer and teamOk(plr) then
             local char = plr.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             local rt = char and char:FindFirstChild("HumanoidRootPart")
             if char and hum and rt and hum.Health > 0 and char:IsDescendantOf(Workspace) then
                 local d3 = (rt.Position - myRoot.Position).Magnitude
-                if d3 <= S.SilentAimMaxDist and not saNearPad(rt.Position) then
+                if d3 <= S.SilentAimMaxDist and not nearPad(rt.Position) then
                     local part, sp = firstOnScreen(cam, char, rt)
                     if part and sp then
                         cands[#cands + 1] = { char = char, root = rt, part = part, sp = sp, team = plr.Team, d3 = d3 }
@@ -602,7 +580,6 @@ local function silentAimFire()
     end
     if #cands == 0 then return end
 
-    -- hanya tim lawan dari match kita
     local oppTeam, oppD
     for _, c in ipairs(cands) do
         if c.team ~= myTeam and (not oppD or c.d3 < oppD) then
@@ -623,7 +600,6 @@ local function silentAimFire()
 
     local baseIgnore = { LocalPlayer.Character, cam }
 
-    -- [FIX] wallcheck per kandidat: gagal -> coba part lain -> gagal -> musuh berikutnya
     for _, c in ipairs(list) do
         local tryParts = { c.part }
         local t2 = c.char:FindFirstChild("UpperTorso") or c.char:FindFirstChild("Torso")
@@ -633,36 +609,72 @@ local function silentAimFire()
         if c.root then tryParts[#tryParts + 1] = c.root end
 
         for _, p in ipairs(tryParts) do
-            local hitPos, hitInst
-            if S.SilentAimWallCheck then
-                hitPos, hitInst = saLineOfSight(origin, p, c.char, baseIgnore)
-            elseif p and p.Parent then
-                hitPos, hitInst = p.Position, p
-            end
-            if hitPos and hitInst then
-                ShootGun:FireServer(origin, hitPos, hitInst, hitPos)
-                makeTracer(origin, hitPos)
-                makeSound(139527135965700, myRoot, 1)
-                return
+            if p and p.Parent then
+                local visible = true
+                if S.SilentAimWallCheck then
+                    visible = saVisible(origin, p, c.char, baseIgnore)
+                end
+                if visible then
+                    local pos = p.Position
+                    ShootGun:FireServer(origin, pos, p, pos)
+                    makeTracer(origin, pos)
+                    makeSound(139527135965700, myRoot, 1)
+                    return
+                end
             end
         end
     end
 end
 
 local lastSilentShot = 0
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
+local function trySilentShot()
     if not S.SilentAimEnabled then return end
-    if Library._actionOpen or Library._confirmOpen then return end
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1
-        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    if Library._confirmOpen or Library._actionOpen then return end
     local now = os.clock()
     if now - lastSilentShot < 0.12 then return end
     lastSilentShot = now
-    task.spawn(silentAimFire)
-end)
+    silentAimFire()
+end
 
--- // [6] SERVER LAG (batch gated)
+-- Trigger manual: PC mouse click + HP quick-tap kanan (bukan joystick / camera drag)
+AimEnv.RN_Click = function(gp)
+    if gp then return end
+    trySilentShot()
+end
+AimEnv.RN_TouchBegin = function(input, gp)
+    if gp then return end
+    AimEnv.RN_TouchTrack = AimEnv.RN_TouchTrack or {}
+    AimEnv.RN_TouchTrack[input] = { t = os.clock(), pos = input.Position }
+end
+AimEnv.RN_TouchEnd = function(input)
+    local tr = AimEnv.RN_TouchTrack and AimEnv.RN_TouchTrack[input]
+    if AimEnv.RN_TouchTrack then AimEnv.RN_TouchTrack[input] = nil end
+    if not tr then return end
+    local dt = os.clock() - tr.t
+    local moved = (input.Position - tr.pos).Magnitude
+    if dt <= 0.25 and moved <= 12 then
+        local vp = Camera.ViewportSize
+        if tr.pos.X >= vp.X * 0.5 then trySilentShot() end
+    end
+end
+
+if not AimEnv.RN_InputHooked then
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if AimEnv.RN_Click then AimEnv.RN_Click(gp) end
+        elseif input.UserInputType == Enum.UserInputType.Touch then
+            if AimEnv.RN_TouchBegin then AimEnv.RN_TouchBegin(input, gp) end
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            if AimEnv.RN_TouchEnd then AimEnv.RN_TouchEnd(input) end
+        end
+    end)
+    AimEnv.RN_InputHooked = true
+end
+
+-- // [6] SERVER LAG
 local function lagArgs(name)
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -692,7 +704,7 @@ task.spawn(function()
     end
 end)
 
--- // [6b] ANTI-LAG v2 (gun FX spam cleanup)
+-- // [6b] ANTI-LAG v2
 local AL = {
     Enabled = false,
     RemoveFX = true,
@@ -825,7 +837,7 @@ local function alInitialSweep()
     end
 end
 
--- // [7] ESP SYSTEM (VERSI LAMA — simple & stabil)
+-- // [7] ESP SYSTEM (VERSI LAMA)
 local ESP = { Enabled = false, Range = 300, Names = true, Distance = true, Objects = {} }
 local ESP_ENEMY = Color3.fromRGB(255, 60, 60)
 local ESP_TEAM  = Color3.fromRGB(60, 120, 255)
@@ -999,7 +1011,7 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- // [8b] AUTO UNANCHOR CHARACTER (bypass 5s prep freeze)
+-- // [8b] AUTO UNANCHOR CHARACTER
 RunService.Stepped:Connect(function()
     if not S.AutoUnanchor then return end
     local char = LocalPlayer.Character
@@ -1156,6 +1168,60 @@ local function burstGuard(kind, value, flag, apply)
     end
 end
 
+-- // [9c] INTERFACE VISIBILITY HELPERS (Keybind / QuickBar / NetStats)
+local function findLibGui()
+    local parents = {}
+    pcall(function() table.insert(parents, game:GetService("CoreGui")) end)
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then table.insert(parents, pg) end
+    end)
+    if typeof(gethui) == "function" then
+        pcall(function() local h = gethui(); if h then table.insert(parents, h) end end)
+    end
+    for _, p in ipairs(parents) do
+        if p then
+            local g = p:FindFirstChild("ZethHubV5")
+            if g then return g end
+        end
+    end
+    return nil
+end
+
+local function setNamedVisible(names, v)
+    local g = findLibGui()
+    if not g then return end
+    for _, d in ipairs(g:GetDescendants()) do
+        for _, n in ipairs(names) do
+            if d.Name == n and d:IsA("GuiObject") then
+                pcall(function() d.Visible = v end)
+            end
+        end
+    end
+end
+
+local function setKeybindList(v)
+    if Window and Window.ToggleKeybindList then
+        pcall(function() Window:ToggleKeybindList(v) end)
+    else
+        setNamedVisible({"KeybindList"}, v)
+    end
+end
+local function setQuickBar(v)
+    if Window and Window.SetQuickBarVisible then
+        pcall(function() Window:SetQuickBarVisible(v) end)
+    else
+        setNamedVisible({"QuickBar"}, v)
+    end
+end
+local function setNetStats(v)
+    if Window and Window.SetNetStatsBarVisible then
+        pcall(function() Window:SetNetStatsBarVisible(v) end)
+    else
+        setNamedVisible({"NetStatsBar", "NetStatsOuter", "NetStatsInner", "SidebarNetStats"}, v)
+    end
+end
+
 -- // [10] UI CONSTRUCTION
 local Main = Window:CreateTab("Main", "crosshair")
 local Binds = Window:CreateTab("Keybind", "key")
@@ -1172,7 +1238,7 @@ Main:CreateSlider({Name = "Auto Shoot Cooldown", Icon = "timer", Min = 0.1, Max 
 
 Main:CreateSection("Silent Aim (Manual)")
 local tSilentAim = Main:CreateToggle({Name = "Enable Silent Aim Manual", Icon = "crosshair", Flag = "MVSD_SilentAim", Default = false,
-    Tooltip = "Every click hits ONE enemy visible on your screen (match-only)",
+    Tooltip = "On-screen method: each manual click hits ONE enemy nearest to your aim. Never auto-fires.",
     Callback = function(v)
         S.SilentAimEnabled = v
         Library:Notify(v and "Silent Aim ON — 1 target per click." or "Silent Aim OFF.", 3, "Silent Aim", "crosshair")
@@ -1183,9 +1249,11 @@ Main:CreateToggle({Name = "Silent Aim Wall Check", Icon = "shield", Flag = "MVSD
 Main:CreateDropdown({Name = "Aim Part", Icon = "user", Options = {"Leg", "Arm", "Torso", "Head"},
     Default = "Torso", Flag = "MVSD_SilentPart",
     Callback = function(v) S.SilentAimPart = v end})
-Main:CreateSlider({Name = "Aim Max Distance", Icon = "gauge", Min = 50, Max = 3000, Default = 400, Step = 10, Flag = "MVSD_SilentMaxDist",
+Main:CreateSlider({Name = "Aim Max Distance", Icon = "gauge", Min = 50, Max = 1500, Default = 400, Step = 10, Flag = "MVSD_SilentMaxDist",
     Format = function(v) return tostring(v) .. " studs" end,
     Callback = function(v) S.SilentAimMaxDist = v end})
+Main:CreateParagraph({Title = "Silent Aim Info", Icon = "info",
+    Content = "On-Screen method, match-only. Silent Aim is IGNORED while you are in the lobby or spectating another match, and it only works while you actually hold a gun (no auto-equip). Targets are limited to the enemy team of YOUR match within Aim Max Distance. Each click hits ONE enemy nearest to your aim point."})
 
 Main:CreateSection("Kill All (Ultra Fast)")
 local tKillGun = Main:CreateToggle({Name = "Kill All Gun", Icon = "crosshair", Flag = "MVSD_KillGun", Default = false,
@@ -1282,22 +1350,29 @@ Player:CreateSlider({Name = "ESP Match Range", Icon = "gauge", Min = 100, Max = 
 Player:CreateParagraph({Title = "Note", Icon = "info",
     Content = "Player tab & Quick Bar share the same engine (Library.Movement). ESP only shows your current match."})
 
--- Two-Way Sync for Movement
+-- Two-Way Sync for Movement (installed once, targets refreshed each execute)
 local QB = Window.QuickBarRows
-local syncing = false
-local function wrap(name, fn)
-    local orig = M[name]
-    M[name] = function(self, v, ...)
-        orig(self, v, ...)
-        if syncing then return end
-        syncing = true pcall(fn, v) syncing = false
+if not AimEnv.RN_MWrapped then
+    AimEnv.RN_MWrapped = true
+    local function wrap(name, key)
+        local orig = M[name]
+        M[name] = function(self, v, ...)
+            orig(self, v, ...)
+            if AimEnv.RN_Syncing then return end
+            AimEnv.RN_Syncing = true
+            local tg = AimEnv.RN_SyncTargets or {}
+            local obj = tg[key]
+            if obj and obj.Set then pcall(obj.Set, obj, v) end
+            AimEnv.RN_Syncing = false
+        end
     end
+    wrap("SetInfJump", "InfJump")
+    wrap("SetWalkSpeedActive", "Move")
+    wrap("SetWalkSpeed", "Walk")
+    wrap("SetJumpPowerActive", "JumpEn")
+    wrap("SetJumpPower", "JumpVal")
 end
-wrap("SetInfJump", function(v) pInf:Set(v) if QB and QB.InfJump then QB.InfJump:Set(v) end end)
-wrap("SetWalkSpeedActive", function(v) pMove:Set(v) if QB and QB.WalkToggle then QB.WalkToggle:Set(v) end end)
-wrap("SetWalkSpeed", function(v) pWalk:Set(v) if QB and QB.WalkSlider then QB.WalkSlider:Set(v) end end)
-wrap("SetJumpPowerActive", function(v) pJumpEn:Set(v) if QB and QB.JumpToggle then QB.JumpToggle:Set(v) end end)
-wrap("SetJumpPower", function(v) pJumpVal:Set(v) if QB and QB.JumpSlider then QB.JumpSlider:Set(v) end end)
+AimEnv.RN_SyncTargets = { InfJump = pInf, Move = pMove, Walk = pWalk, JumpEn = pJumpEn, JumpVal = pJumpVal }
 
 -- Misc Tab
 local Misc = Window:CreateTab("Misc", "skull")
@@ -1390,11 +1465,27 @@ Binds:CreateSection("Interface")
 Binds:CreateKeybind({Name = "Hide / Show UI", Icon = "eye", Flag = "Bind_ToggleUI",
     CurrentKeybind = Enum.KeyCode.RightControl, Tooltip = "Toggle the whole interface",
     Callback = function() Window:Toggle() end})
+
+-- [NEW] Visibility toggles (default hidden on mobile to reduce clutter)
+Binds:CreateSection("Interface Visibility")
+Binds:CreateToggle({Name = "Show Keybind List", Icon = "key", Flag = "RN_ShowKeybindList", Default = not IS_MOBILE,
+    Tooltip = "Show / hide the floating KEYBINDS panel (hide on HP to reduce clutter)",
+    Callback = function(v) setKeybindList(v) end})
+Binds:CreateToggle({Name = "Show Quick Bar 1", Icon = "gauge", Flag = "RN_ShowQuickBar", Default = not IS_MOBILE,
+    Tooltip = "Show / hide the floating Quick Bar (movement). Hide on HP to reduce clutter.",
+    Callback = function(v) setQuickBar(v) end})
+Binds:CreateToggle({Name = "Show Net Performance", Icon = "activity", Flag = "RN_ShowNetStats", Default = not IS_MOBILE,
+    Tooltip = "Show / hide the Net Stats / performance bars. Hide on HP to reduce clutter.",
+    Callback = function(v) setNetStats(v) end})
 Binds:CreateParagraph({Title = "How to use", Icon = "info",
-    Content = "Click the key badge on the right to rebind any key. All binds also appear in the floating KEYBINDS panel. RightShift still works as the built-in UI toggle."})
+    Content = "Click the key badge on the right to rebind any key. Use the Visibility toggles above to hide Keybind / Quick Bar / Net Performance on mobile. RightShift still works as the built-in UI toggle."})
+
+-- apply visibility defaults now
+setKeybindList(not IS_MOBILE)
+setQuickBar(not IS_MOBILE)
+setNetStats(not IS_MOBILE)
 
 task.defer(applyGates)
-Window:ToggleKeybindList(true)
 
 -- // [12] STARTUP: RESET CHARACTER 1x
 task.spawn(function()
@@ -1429,4 +1520,4 @@ task.spawn(function()
     end)
 end)
 
-Library:Notify("MVSD ready: Silent Aim On-Screen + Old ESP restored.", 5, "Ro-Netrium", "flame")
+Library:Notify("MVSD ready: Silent Aim on-screen + Wallcheck, Royal theme, visibility toggles added.", 5, "Ro-Netrium", "flame")

@@ -61,7 +61,7 @@ local S = {
     BatchMode = false,
 
     AntiLagEnabled = false, AntiLagLimit = 15,
-    AntiLagFX = false, AntiLagSounds = false,
+    AntiLagFX = true, AntiLagSounds = true,
 
     ESPEnabled = false, ESPNames = true, ESPDistance = true, ESPRange = 300,
     MovementMode = "Normal",

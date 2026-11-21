@@ -2,6 +2,7 @@
     RO-NETRIUM: Murderer Vs Sheriff Duels
     This script is still in the testing stage, expect bugs
     Powered: Zaycapcay & Exterminate0
+    + Anti-AFK | Walk to Pad RANDOM (curved, exit-lobby-first)
 ]]
 
 -- // [1] INITIALIZATION & SERVICES
@@ -39,6 +40,7 @@ local Debris = game:GetService("Debris")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -78,6 +80,8 @@ local S = {
 
     ESPEnabled = false, ESPNames = true, ESPDistance = true, ESPRange = 300,
     MovementMode = "Normal",
+
+    AntiAFK = true,
 }
 
 local function effGunBurst()   return S.BurstMode and S.KillGunBurst   or 1 end
@@ -112,7 +116,6 @@ local function validTarget(plr)
     return true, root, hum, char
 end
 
--- [FIX] Deteksi tim valid & status in-match (bukan lobby / spectate)
 local LOBBY_TEAMS = {
     lobby = true, choosing = true, choose = true, spectator = true, spectators = true,
     watching = true, watch = true, waiting = true, wait = true,
@@ -133,7 +136,6 @@ local function nearPad(pos)
     return false
 end
 
--- return root HANYA kalau kita benar-benar sedang main di arena
 local function myMatchRoot()
     if not teamOk(LocalPlayer) then return nil end
     local char = LocalPlayer.Character
@@ -296,7 +298,6 @@ local function fireAtBestTarget()
     return false
 end
 
--- Auto Shoot Loop
 local nextShot = 0
 task.spawn(function()
     while true do
@@ -322,7 +323,7 @@ local function targetList()
     return out
 end
 
--- // [5a] CRASH ALL — CLASSIC METHOD
+-- // [5a] CRASH ALL
 local lagStart = nil
 task.spawn(function()
     while true do
@@ -363,7 +364,7 @@ task.spawn(function()
     end
 end)
 
--- // [5b] KILL ALL — ULTRA FAST
+-- // [5b] KILL ALL
 local function killGunPass(burst)
     if not ShootGun then return end
     local char = LocalPlayer.Character
@@ -405,19 +406,17 @@ local lastGunKill, lastKnifeKill = 0, 0
 RunService.Heartbeat:Connect(function()
     if S.CrashAllEnabled then return end
     local now = os.clock()
-
     if S.KillGunEnabled and (now - lastGunKill) >= S.KillGunDelay then
         lastGunKill = now
         killGunPass()
     end
-
     if S.KillKnifeEnabled and not S.KillGunEnabled and (now - lastKnifeKill) >= S.KillKnifeDelay then
         lastKnifeKill = now
         killKnifePass()
     end
 end)
 
--- // [5c] SILENT AIM — ON-SCREEN MANUAL CLICK (PC mouse + HP tap) + WALLCHECK
+-- // [5c] SILENT AIM
 local AimEnv = (typeof(getgenv) == "function" and getgenv()) or _G
 
 if AimEnv.RN_AimConn then
@@ -499,7 +498,6 @@ local function firstOnScreen(cam, tc, root)
     if t2 then list[#list + 1] = t2 end
     if h2 then list[#list + 1] = h2 end
     if root then list[#list + 1] = root end
-
     for _, p in ipairs(list) do
         if p and p.Parent then
             local sp, on = cam:WorldToViewportPoint(p.Position)
@@ -511,29 +509,21 @@ local function firstOnScreen(cam, tc, root)
     return nil
 end
 
--- [WALLCHECK] boolean line-of-sight: non-solid ditembus, tembok solid memblokir
 local function saVisible(origin, part, targetChar, baseIgnore)
     if not part or not part.Parent then return false end
     local ignore = {}
     for _, v in ipairs(baseIgnore) do ignore[#ignore + 1] = v end
     local from = origin
-
     for _ = 1, 8 do
         local dir = part.Position - from
         if dir.Magnitude <= 0.05 then return true end
-
         local rp = RaycastParams.new()
         rp.FilterType = Enum.RaycastFilterType.Exclude
         rp.FilterDescendantsInstances = ignore
         rp.IgnoreWater = true
-
         local hit = Workspace:Raycast(from, dir, rp)
         if not hit or not hit.Instance then return false end
-
-        if hit.Instance:IsDescendantOf(targetChar) then
-            return true
-        end
-
+        if hit.Instance:IsDescendantOf(targetChar) then return true end
         local solid, trans = true, 0
         pcall(function() solid = hit.Instance.CanCollide end)
         pcall(function() trans = hit.Instance.Transparency end)
@@ -547,17 +537,13 @@ local function saVisible(origin, part, targetChar, baseIgnore)
     return false
 end
 
--- [METHOD] On-screen, match-only, hold-gun, 1 musuh terdekat ke aim per click + WALLCHECK
 local function silentAimFire()
     if not ShootGun then return end
-
     local myRoot = myMatchRoot()
     if not myRoot then return end
     if not heldGun() then return end
-
     local cam = Workspace.CurrentCamera
     if not cam then return end
-
     local myTeam = LocalPlayer.Team
     local center = aimCenter()
     local origin = myRoot.Position + Vector3.new(0, 1.5, 0)
@@ -600,7 +586,6 @@ local function silentAimFire()
     table.sort(list, function(a, b) return a.aimDist < b.aimDist end)
 
     local baseIgnore = { LocalPlayer.Character, cam }
-
     for _, c in ipairs(list) do
         local tryParts = { c.part }
         local t2 = c.char:FindFirstChild("UpperTorso") or c.char:FindFirstChild("Torso")
@@ -608,7 +593,6 @@ local function silentAimFire()
         if t2 then tryParts[#tryParts + 1] = t2 end
         if h2 then tryParts[#tryParts + 1] = h2 end
         if c.root then tryParts[#tryParts + 1] = c.root end
-
         for _, p in ipairs(tryParts) do
             if p and p.Parent then
                 local visible = true
@@ -637,7 +621,6 @@ local function trySilentShot()
     silentAimFire()
 end
 
--- Trigger manual: PC mouse click + HP quick-tap kanan (bukan joystick / camera drag)
 AimEnv.RN_Click = function(gp)
     if gp then return end
     trySilentShot()
@@ -707,10 +690,7 @@ end)
 
 -- // [6b] ANTI-LAG v2
 local AL = {
-    Enabled = false,
-    RemoveFX = true,
-    MuteSounds = true,
-    MaxObjectsPerSecond = 15,
+    Enabled = false, RemoveFX = true, MuteSounds = true, MaxObjectsPerSecond = 15,
     Keywords = {
         "knife","blade","throw","handle","projectile","tool",
         "bullet","tracer","muzzle","flash","impact","spark","smoke",
@@ -735,18 +715,15 @@ local function alNameMatch(inst)
     end
     return false
 end
-
 local function alIsStructure(p)
     if not p.Anchored then return false end
     local s = p.Size
     return (s.X > 12 or s.Y > 12 or s.Z > 12)
 end
-
 local function alIsSmall(p)
     local s = p.Size
     return (s.X <= 6 and s.Y <= 6 and s.Z <= 6)
 end
-
 local function alLooksLikeTracer(p)
     if not p.Anchored or p.CanCollide then return false end
     local s = p.Size
@@ -757,7 +734,6 @@ local function alLooksLikeTracer(p)
     if s.Z <= 0.7 then thin += 1 end
     return thin >= 2
 end
-
 local function alProtected(inst)
     local a = inst.Parent
     while a and a ~= Workspace do
@@ -767,23 +743,19 @@ local function alProtected(inst)
     end
     return false
 end
-
 local function alDestroy(inst)
     task.defer(function()
         if inst and inst.Parent then pcall(function() inst:Destroy() end) end
     end)
 end
-
 local function alHandle(d)
     if not AL.Enabled then return end
     if d.Name == "RN_Tracer" or d.Name == "RN_ESP" or d.Name == "RN_ESP_Tag" then return end
-
     local now = os.clock()
     if now - alWindow >= 1 then alCount = 0 alWindow = now end
     alCount += 1
     if alCount > AL.MaxObjectsPerSecond then alSpamUntil = now + 2 end
     local spam = now < alSpamUntil
-
     if d:IsA("Sound") then
         if AL.MuteSounds and (spam or alNameMatch(d) or alNameMatch(d.Parent)) then
             pcall(function() d:Stop() d.Volume = 0 end)
@@ -791,7 +763,6 @@ local function alHandle(d)
         end
         return
     end
-
     if FX_CLASS[d.ClassName] then
         if not AL.RemoveFX then return end
         local par = d.Parent
@@ -802,7 +773,6 @@ local function alHandle(d)
         end
         return
     end
-
     if d:IsA("BasePart") then
         if alIsStructure(d) then return end
         local nameMatch = alNameMatch(d)
@@ -816,19 +786,16 @@ local function alHandle(d)
         alDestroy(d)
         return
     end
-
     if d:IsA("Model") then
         if not alNameMatch(d) then return end
         if alProtected(d) then return end
         alDestroy(d)
     end
 end
-
 Workspace.DescendantAdded:Connect(function(d)
     if not AL.Enabled then return end
     alHandle(d)
 end)
-
 local function alInitialSweep()
     for _, obj in ipairs(Workspace:GetChildren()) do
         alHandle(obj)
@@ -838,7 +805,7 @@ local function alInitialSweep()
     end
 end
 
--- // [7] ESP SYSTEM (VERSI LAMA)
+-- // [7] ESP SYSTEM
 local ESP = { Enabled = false, Range = 300, Names = true, Distance = true, Objects = {} }
 local ESP_ENEMY = Color3.fromRGB(255, 60, 60)
 local ESP_TEAM  = Color3.fromRGB(60, 120, 255)
@@ -849,7 +816,6 @@ local function espNearPad(pos)
     end
     return false
 end
-
 local function espMyRoot()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -857,7 +823,6 @@ local function espMyRoot()
     if espNearPad(root.Position) then return nil end
     return root
 end
-
 local function espRemove(p)
     local o = ESP.Objects[p]
     if o then
@@ -866,7 +831,6 @@ local function espRemove(p)
         ESP.Objects[p] = nil
     end
 end
-
 local function clearLibraryESP()
     for _, plr in ipairs(Players:GetPlayers()) do
         local char = plr.Character
@@ -881,7 +845,6 @@ local function clearLibraryESP()
         end
     end
 end
-
 Workspace.DescendantAdded:Connect(function(d)
     if ESP.Enabled and (d.Name == "PlayerESP_GUI" or d.Name == "PlayerESP_HL") then
         task.defer(function()
@@ -889,18 +852,15 @@ Workspace.DescendantAdded:Connect(function(d)
         end)
     end
 end)
-
 local function espCreate(p, color, dist)
     local char = p.Character
     if not char then return end
     local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
     if not head then return end
-
     local libHL = char:FindFirstChild("PlayerESP_HL")
     if libHL then pcall(function() libHL:Destroy() end) end
     local libBB = head:FindFirstChild("PlayerESP_GUI")
     if libBB then pcall(function() libBB:Destroy() end) end
-
     local hl = Instance.new("Highlight")
     hl.Name = "RN_ESP"
     hl.Adornee = char
@@ -910,7 +870,6 @@ local function espCreate(p, color, dist)
     hl.OutlineTransparency = 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = char
-
     local bb, txt, dtxt
     if ESP.Names or ESP.Distance then
         bb = Instance.new("BillboardGui")
@@ -920,7 +879,6 @@ local function espCreate(p, color, dist)
         bb.StudsOffset = Vector3.new(0, 2.5, 0)
         bb.AlwaysOnTop = true
         bb.Parent = head
-
         local y = 0
         if ESP.Names then
             txt = Instance.new("TextLabel")
@@ -950,11 +908,9 @@ local function espCreate(p, color, dist)
     end
     ESP.Objects[p] = {hl = hl, bb = bb, txt = txt, dist = dtxt, color = color}
 end
-
 local function espClearAll()
     for _, p in ipairs(Players:GetPlayers()) do espRemove(p) end
 end
-
 local function espUpdate()
     if ESP.Enabled then clearLibraryESP() end
     local myRoot = espMyRoot()
@@ -990,7 +946,6 @@ local function espUpdate()
         end
     end
 end
-
 task.spawn(function()
     while true do
         task.wait(0.25)
@@ -1012,18 +967,16 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- // [8b] AUTO UNANCHOR CHARACTER
+-- // [8b] AUTO UNANCHOR
 RunService.Stepped:Connect(function()
     if not S.AutoUnanchor then return end
     local char = LocalPlayer.Character
     if not char then return end
-
     for _, p in ipairs(char:GetDescendants()) do
         if p:IsA("BasePart") and p.Anchored then
             pcall(function() p.Anchored = false end)
         end
     end
-
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then
         pcall(function()
@@ -1040,7 +993,6 @@ RunService.Stepped:Connect(function()
             end
         end)
     end
-
     local root = char:FindFirstChild("HumanoidRootPart")
     if root then
         for _, c in ipairs(root:GetChildren()) do
@@ -1052,12 +1004,157 @@ RunService.Stepped:Connect(function()
     end
 end)
 
+-- // [8c] ANTI-AFK + DUEL PAD WALKER (RANDOM PAD)
+local OUTSIDE_CF = CFrame.new(1, -504, 290) -- titik di luar lobby
+
+-- Seed random supaya pilihan pad tidak monoton saat re-execute
+pcall(function()
+    math.randomseed(math.floor((os.clock() * 1000) % 2147483647))
+    math.random()
+end)
+
+-- [RANDOM] Daftar pad tetap per mode: Bagian 1 (kanan/kiri) + Bagian 2 (kiri/kanan)
+local DUEL_PADS = {
+    ["1v1"] = {
+        { pos = Vector3.new(-13, -504, 295), side = "Kanan", section = 1 },
+        { pos = Vector3.new(-13, -504, 301), side = "Kiri",  section = 1 },
+        { pos = Vector3.new(17,  -504, 294), side = "Kiri",  section = 2 },
+        { pos = Vector3.new(16,  -504, 299), side = "Kanan", section = 2 },
+    },
+    ["2v2"] = {
+        { pos = Vector3.new(-12, -504, 308), side = "Kanan", section = 1 },
+        { pos = Vector3.new(-12, -504, 315), side = "Kiri",  section = 1 },
+        { pos = Vector3.new(17,  -504, 308), side = "Kiri",  section = 2 },
+        { pos = Vector3.new(17,  -504, 315), side = "Kanan", section = 2 },
+    },
+    ["3v3"] = {
+        { pos = Vector3.new(-11, -504, 325), side = "Kanan", section = 1 },
+        { pos = Vector3.new(-10, -504, 331), side = "Kiri",  section = 1 },
+        { pos = Vector3.new(17,  -504, 324), side = "Kiri",  section = 2 },
+        { pos = Vector3.new(17,  -504, 331), side = "Kanan", section = 2 },
+    },
+    ["4v4"] = {
+        { pos = Vector3.new(-10, -504, 343), side = "Kanan", section = 1 },
+        { pos = Vector3.new(-9,  -504, 351), side = "Kiri",  section = 1 },
+        { pos = Vector3.new(16,  -504, 342), side = "Kiri",  section = 2 },
+        { pos = Vector3.new(16,  -504, 350), side = "Kanan", section = 2 },
+    },
+}
+
+-- Anti-AFK: reset idle timer supaya tidak ke-kick 20 menit
+LocalPlayer.Idled:Connect(function()
+    if not S.AntiAFK then return end
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(0, 0))
+    end)
+end)
+task.spawn(function()
+    while true do
+        task.wait(60)
+        if S.AntiAFK then
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new(0, 0))
+            end)
+        end
+    end
+end)
+
+local function insideLobby(root)
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = { LocalPlayer.Character }
+    rp.IgnoreWater = true
+    local dir = OUTSIDE_CF.Position - root.Position
+    if dir.Magnitude > 5 then
+        local hit = Workspace:Raycast(root.Position, dir, rp)
+        if hit and hit.Instance and hit.Instance.CanCollide then return true end
+    end
+    local up = Workspace:Raycast(root.Position, Vector3.new(0, 60, 0), rp)
+    if up and up.Instance and up.Instance.CanCollide then return true end
+    return false
+end
+
+local RN_Walk = { active = false, cancel = false }
+local function walkRoute(points)
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return false end
+    RN_Walk.active = true
+    RN_Walk.cancel = false
+    for _, wp in ipairs(points) do
+        if RN_Walk.cancel then break end
+        hum:MoveTo(wp)
+        local t0 = os.clock()
+        local last = root.Position
+        local stuck = 0
+        while os.clock() - t0 < 10 do
+            task.wait(0.1)
+            if RN_Walk.cancel then break end
+            local cur = root.Position
+            if (cur - wp).Magnitude < 5 then break end
+            if (cur - last).Magnitude < 0.3 then
+                stuck += 0.1
+                if stuck >= 0.8 then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    stuck = 0
+                end
+            else
+                stuck = 0
+            end
+            last = cur
+        end
+    end
+    RN_Walk.active = false
+    return true
+end
+
+local function walkToPadPos(pos)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    -- kalau di dalam lobby: keluar dulu (CFrame ke titik luar), baru walk
+    if insideLobby(root) then
+        root.CFrame = OUTSIDE_CF + Vector3.new(0, 3, 0)
+        task.wait(0.15)
+        char = LocalPlayer.Character
+        root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+    end
+    local start = root.Position
+    local target = pos + Vector3.new(0, 3, 0)
+    local dir = target - start
+    local perp = Vector3.new(-dir.Z, 0, dir.X)
+    if perp.Magnitude > 1 then
+        perp = perp.Unit * math.clamp(dir.Magnitude * 0.12, 4, 18)
+    else
+        perp = Vector3.new(0, 0, 0)
+    end
+    local mid = start:Lerp(target, 0.5) + perp
+    local pts = { OUTSIDE_CF.Position + Vector3.new(0, 3, 0), mid, target }
+    if (start - pts[1]).Magnitude < 8 then table.remove(pts, 1) end
+    walkRoute(pts)
+end
+
+-- [RANDOM] Pilih acak salah satu pad dari mode yang dipilih
+local function walkToRing(mode)
+    local list = DUEL_PADS[tostring(mode)]
+    if not list or #list == 0 then
+        Library:Notify("Pad " .. tostring(mode) .. " not found.", 3, "Duel", "x-circle")
+        return
+    end
+    local pick = list[math.random(1, #list)]
+    Library:Notify("Walking to " .. mode .. " pad (Bagian " .. pick.section .. " - " .. pick.side .. ")", 4, "Duel", "navigation")
+    walkToPadPos(pick.pos)
+end
+
 -- // [9] SLIDER LOCK HELPER
 local function setSliderEnabled(flag, enabled, lockText)
     local el = Library._elements and Library._elements[flag]
     if not el or not el.Frame then return end
     local f = el.Frame
-
     local gate = f:FindFirstChild("RN_Gate")
     if not gate then
         gate = Instance.new("Frame")
@@ -1097,7 +1194,7 @@ local function applyGates()
     setSliderEnabled("MVSD_LagBatch",       S.BatchMode, "🔒  Enable BATCH MODE first")
 end
 
--- // [9b] ACTION ADAPTER + WARNING >20x
+-- // [9b] ACTION ADAPTER
 local function showAction(cfg)
     local yes = cfg.ConfirmText or "Apply"
     local no  = cfg.CancelText or "Revert"
@@ -1113,16 +1210,11 @@ local function showAction(cfg)
         RequireConfirm = true,
     }
     local targets = {
-        { o = Library, n = "Action" },
-        { o = Library, n = "ShowAction" },
-        { o = Library, n = "ShowActionConfirm" },
-        { o = Library, n = "ActionConfirm" },
-        { o = Library, n = "Confirm" },
-        { o = Window,  n = "Action" },
-        { o = Window,  n = "ShowAction" },
-        { o = Window,  n = "ShowActionConfirm" },
-        { o = Window,  n = "ActionConfirm" },
-        { o = Window,  n = "Confirm" },
+        { o = Library, n = "Action" }, { o = Library, n = "ShowAction" },
+        { o = Library, n = "ShowActionConfirm" }, { o = Library, n = "ActionConfirm" },
+        { o = Library, n = "Confirm" }, { o = Window, n = "Action" },
+        { o = Window, n = "ShowAction" }, { o = Window, n = "ShowActionConfirm" },
+        { o = Window, n = "ActionConfirm" }, { o = Window, n = "Confirm" },
     }
     for _, t in ipairs(targets) do
         local fn = t.o and t.o[t.n]
@@ -1142,15 +1234,13 @@ local function burstGuard(kind, value, flag, apply)
     local now = os.clock()
     if now - lastBurstPrompt < 2 then return end
     lastBurstPrompt = now
-
     local shown = showAction({
         Title = "High Burst Warning",
         Content = string.format(
             "%dx %s burst is above the safe limit (20x).\nThis can cause heavy character delay / rubber-banding and high ping.\n\nApply anyway?",
             value, kind),
         Icon = "triangle-alert",
-        ConfirmText = "Apply",
-        CancelText = "Revert",
+        ConfirmText = "Apply", CancelText = "Revert",
         OnConfirm = function()
             Library:Notify(value .. "x " .. kind .. " burst applied. Watch your ping!", 4, "Kill All", "flame")
         end,
@@ -1163,13 +1253,12 @@ local function burstGuard(kind, value, flag, apply)
             Library:Notify("Reverted to 20x (safe limit).", 3, "Kill All", "shield")
         end,
     })
-
     if not shown then
         Library:Notify("Warning: " .. value .. "x " .. kind .. " burst WILL cause character delay!", 5, "Kill All", "triangle-alert")
     end
 end
 
--- // [9c] INTERFACE VISIBILITY HELPERS (Keybind / QuickBar / NetStats)
+-- // [9c] INTERFACE VISIBILITY HELPERS
 local function findLibGui()
     local parents = {}
     pcall(function() table.insert(parents, game:GetService("CoreGui")) end)
@@ -1188,7 +1277,6 @@ local function findLibGui()
     end
     return nil
 end
-
 local function setNamedVisible(names, v)
     local g = findLibGui()
     if not g then return end
@@ -1200,7 +1288,6 @@ local function setNamedVisible(names, v)
         end
     end
 end
-
 local function setKeybindList(v)
     if Window and Window.ToggleKeybindList then
         pcall(function() Window:ToggleKeybindList(v) end)
@@ -1281,18 +1368,14 @@ Main:CreateToggle({Name = "Burst Mode", Icon = "layers", Flag = "MVSD_BurstMode"
     end})
 Main:CreateSlider({Name = "Kill Gun Burst", Icon = "layers", Min = 1, Max = 30, Default = 5, Step = 1, Flag = "MVSD_KillGunBurst",
     Format = function(v) return tostring(v) .. "x" end,
-    Callback = function(v)
-        burstGuard("Gun", v, "MVSD_KillGunBurst", function(n) S.KillGunBurst = n end)
-    end})
+    Callback = function(v) burstGuard("Gun", v, "MVSD_KillGunBurst", function(n) S.KillGunBurst = n end) end})
 Main:CreateSlider({Name = "Kill Knife Burst", Icon = "layers", Min = 1, Max = 30, Default = 5, Step = 1, Flag = "MVSD_KillKnifeBurst",
     Format = function(v) return tostring(v) .. "x" end,
-    Callback = function(v)
-        burstGuard("Knife", v, "MVSD_KillKnifeBurst", function(n) S.KillKnifeBurst = n end)
-    end})
+    Callback = function(v) burstGuard("Knife", v, "MVSD_KillKnifeBurst", function(n) S.KillKnifeBurst = n end) end})
 Main:CreateButton({Name = "Kill All Gun (Once)", Icon = "target",
     Callback = function() killGunPass() Library:Notify("Kill All Gun burst executed.", 3, "Kill All", "crosshair") end})
 Main:CreateButton({Name = "Kill All Knife (Once)", Icon = "sword",
-    Callback = function() killKnifePass() ibrary:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
+    Callback = function() killKnifePass() Library:Notify("Kill All Knife burst executed.", 3, "Kill All", "sword") end})
 Main:CreateParagraph({Title = "⚠️ Burst Warning", Icon = "triangle-alert",
     Content = "Burst sliders are LOCKED until Burst Mode is ON, Recommended: keep Burst Mode OFF for normal use, or 5x-10x if you need extra power"})
 
@@ -1324,6 +1407,16 @@ local tUnanchor = Player:CreateToggle({Name = "Auto Unanchor Character", Icon = 
 Player:CreateParagraph({Title = "Auto Unanchor", Icon = "info",
     Content = "Keeps your character unanchored and removes freeze constraints, Lets you move during the 5s pre-round countdown"})
 
+Player:CreateSection("Anti AFK")
+Player:CreateToggle({Name = "Anti AFK / Idle", Icon = "timer", Flag = "MVSD_AntiAFK", Default = true,
+    Tooltip = "Prevents the 20-minute idle kick by simulating activity",
+    Callback = function(v)
+        S.AntiAFK = v
+        Library:Notify(v and "Anti AFK ON, you will not be idle-kicked." or "Anti AFK OFF.", 3, "Anti AFK", "timer")
+    end})
+Player:CreateParagraph({Title = "Anti AFK", Icon = "info",
+    Content = "Resets the idle timer periodically so the 20-minute AFK kick never triggers. Keep ON while idling in lobby."})
+
 Player:CreateSection("ESP")
 Player:CreateToggle({Name = "ESP Player", Icon = "eye", Flag = "MVSD_ESP", Default = false,
     Tooltip = "Match-only ESP, Auto-disables & destroys library ESP to prevent overlap",
@@ -1351,7 +1444,7 @@ Player:CreateSlider({Name = "ESP Match Range", Icon = "gauge", Min = 100, Max = 
 Player:CreateParagraph({Title = "Note", Icon = "info",
     Content = "Player tab & Quick Bar share the same engine, ESP only shows your current match"})
 
--- Two-Way Sync for Movement (installed once, targets refreshed each execute)
+-- Two-Way Sync for Movement
 local QB = Window.QuickBarRows
 if not AimEnv.RN_MWrapped then
     AimEnv.RN_MWrapped = true
@@ -1441,6 +1534,22 @@ Misc:CreateSlider({Name = "Anti Lag Limit", Icon = "gauge", Min = 5, Max = 60, D
 Misc:CreateParagraph({Title = "Anti Lag", Icon = "info",
     Content = "Detecting spam parts/visual effects, Such as gun sound, Gun FX, etc."})
 
+-- // [10b] DUEL TAB (RANDOM PAD ONLY)
+local Duel = Window:CreateTab("Duel", "gamepad-2")
+Duel:CreateSection("Walk to Pad (Random)")
+Duel:CreateButton({Name = "Walk to Pad 1v1", Icon = "navigation",
+    Callback = function() task.spawn(walkToRing, "1v1") end})
+Duel:CreateButton({Name = "Walk to Pad 2v2", Icon = "navigation",
+    Callback = function() task.spawn(walkToRing, "2v2") end})
+Duel:CreateButton({Name = "Walk to Pad 3v3", Icon = "navigation",
+    Callback = function() task.spawn(walkToRing, "3v3") end})
+Duel:CreateButton({Name = "Walk to Pad 4v4", Icon = "navigation",
+    Callback = function() task.spawn(walkToRing, "4v4") end})
+Duel:CreateButton({Name = "Stop Walking", Icon = "x-circle",
+    Callback = function() RN_Walk.cancel = true Library:Notify("Walk cancelled", 2, "Duel", "x-circle") end})
+Duel:CreateParagraph({Title = "Walk Info", Icon = "info",
+    Content = "Each click picks a RANDOM pad for that mode (Bagian 1 or Bagian 2, Kiri or Kanan)\nWalks a curved (non-straight) route: exit lobby first if inside, then arc around to the pad\nAuto-jumps when stuck on obstacles"})
+
 -- // [11] KEYBIND TAB
 Binds:CreateSection("Combat Binds")
 Binds:CreateKeybind({Name = "Kill All Gun", Icon = "crosshair", Flag = "Bind_KillGun",
@@ -1462,13 +1571,10 @@ Binds:CreateKeybind({Name = "Auto Unanchor", Icon = "unlock", Flag = "Bind_Unanc
     CurrentKeybind = Enum.KeyCode.U, Tooltip = "Toggle Auto Unanchor Character ON/OFF",
     Callback = function() if tUnanchor then tUnanchor:Set(not S.AutoUnanchor) end end})
 
-Binds:CreateSection("Interface")
+Binds:CreateSection("Interface & Visibility")
 Binds:CreateKeybind({Name = "Hide/Show Interface", Icon = "eye", Flag = "Bind_ToggleUI",
     CurrentKeybind = Enum.KeyCode.RightControl, Tooltip = "Toggle the whole interface",
     Callback = function() Window:Toggle() end})
-
--- [NEW] Visibility toggles (default hidden on mobile to reduce clutter)
-Binds:CreateSection("Interface Visibility")
 Binds:CreateToggle({Name = "Show Keybind List", Icon = "key", Flag = "RN_ShowKeybindList", Default = not IS_MOBILE,
     Tooltip = "Show/hide the floating Keybinds panel",
     Callback = function(v) setKeybindList(v) end})
@@ -1481,7 +1587,6 @@ Binds:CreateToggle({Name = "Show Net Performance", Icon = "activity", Flag = "RN
 Binds:CreateParagraph({Title = "How to use", Icon = "info",
     Content = "Click the key badge on the right to rebind any key, Use the Visibility toggles above to hide Quick bar, Net Performance, Keybind"})
 
--- apply visibility defaults now
 setKeybindList(not IS_MOBILE)
 setQuickBar(not IS_MOBILE)
 setNetStats(not IS_MOBILE)
@@ -1492,7 +1597,6 @@ task.defer(applyGates)
 task.spawn(function()
     task.wait(3)
     if Library._destroyed then return end
-
     local done = false
     local conn
     conn = LocalPlayer.CharacterAdded:Connect(function(c)
@@ -1502,12 +1606,10 @@ task.spawn(function()
         local h = c:WaitForChild("Humanoid", 5)
         if h then
             task.wait(0.4)
-            pcall(function()
-            end)
+            pcall(function() end)
             Library:Notify("Character reset, speed normalized", 3, "Startup", "refresh-cw")
         end
     end)
-
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local ok = false
@@ -1515,10 +1617,9 @@ task.spawn(function()
     if (not ok or not hum) and char then
         pcall(function() char:BreakJoints() end)
     end
-
     task.delay(8, function()
         if not done and conn then pcall(function() conn:Disconnect() end) end
     end)
 end)
 
-Library:Notify("MVSD ready: Silent Aim on-screen + Wallcheck, Royal theme, visibility toggles added.", 5, "Ro-Netrium", "flame")
+Library:Notify("Ro-Netrium Hub Ready to used!", 5, "Ro-Netrium", "flame")

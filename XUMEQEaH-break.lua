@@ -10,8 +10,8 @@ local lp = Players.LocalPlayer
 local Window = Library:CreateWindow({
     Title = "Ro-Netrium", Subtitle = "Created By Zaycapcay & Exterminate0",
     Tags = {
-        { Text = "JAILBREAK",  Icon = "gamepad-2", Color = Color3.fromRGB(255,204,0), TextColor = Color3.new(0,0,0) },
-        { Text = "NEW UPDATE", Icon = "newspaper",    Color = Color3.fromRGB(0,0,255), TextColor = Color3.new(2,2,2) },
+        { Text = "JAILBREAK",  Icon = "columns-4", Color = Color3.fromRGB(255, 204, 0), TextColor = Color3.new(0,0,0) },
+        { Text = "RNET-LATEST", Icon = "newspaper",    Color = Color3.fromRGB(46, 230, 110), TextColor = Color3.new(2,2,2) },
     },
     QuickBar = true, NetStatsBar = true, InfoTab = true, ToolsTab = true, ThemeTab = true, SaveLoad = true,
     ConfirmTitle = "Ro-Netrium", ConfirmSubtitle = "Close Ro-Netrium? Unsaved changes will be lost.",
